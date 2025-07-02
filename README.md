@@ -1,4 +1,4 @@
-# Lateral Tree-of-Reasoning
+# Lateral Tree-of-Thoughts
 
 **Author: Abhinav Madahar · अभिनव ਮਦਾਹਰ <abhinavmadahar@gmail.com>**
 
