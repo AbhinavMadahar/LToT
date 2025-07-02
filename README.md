@@ -6,6 +6,6 @@
 
 TODO: include a description of LToT
 
-## Guide to Reproducing the Results of Madahar, 2025
+## Guide to Reproducing the Results of (Madahar, 2025)
 
 TODO
