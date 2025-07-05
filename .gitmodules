@@ -1,0 +1,3 @@
+[submodule "external/tot"]
+	path = external/tot
+	url = https://github.com/abhinavmadahar/tree-of-thought-llm
