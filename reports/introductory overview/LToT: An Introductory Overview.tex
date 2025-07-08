@@ -1,0 +1,134 @@
+\documentclass{IEEEtran}
+
+\usepackage{amsmath}
+\usepackage{fontspec}
+
+\newfontfamily\devanagarifont[Script=Devanagari]{Noto Serif Devanagari}
+\newfontfamily\gurmukhifont[Script=Gurmukhi]{Noto Sans Gurmukhi}
+
+\title{Lateral Tree-of-Thoughts (LToT): An Introductory Overview}
+\author{Abhinav Madahar · {\devanagarifont अभिनव} {\gurmukhifont ਮਦਾਹਰ} <abhinavmadahar@gmail.com>}
+\date{July 8, 2025}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+   We introduce \textbf{Lateral Tree-of-Thoughts (LToT)}, a reasoning architecture that augments the vanilla Tree-of-Thoughts (ToT) paradigm by explicitly modelling \textit{lateral} thinking---retaining low-utility yet logically consistent child thoughts.
+   In frontier-scale settings, vanilla ToT saturates quickly: after a few genuinely distinct high-utility continuations, additional sampling yields near-duplicates, leaving modern compute budgets under-utilised.
+   LToT fills this gap.
+
+   LToT generates a dual score $\langle v, c\rangle$ for every candidate in the frontier where $v$ is the utility as in vanilla ToT and $c \in [0, 1]$ is the logical consistency the candidate has with its ancestral trace.
+   We then preserve \textbf{mainline} branches (high-$v$) and \textbf{lateral} branches (low-$v$, high-$c$), laying the groundwork for an adaptive policy that decides when to explore laterals versus exploit mainlines.
+   By converting surplus compute into principled diversity, LToT mitigates premature pruning, supports error correction, and moves reasoning architectures closer to human-level versatility in logical inference and creative problem-solving.
+
+   We summarise the architecture and the two subproblems we are currently addressing: (1) reliably identifying logically consistent low-utility branches and (2) deciding when to explore vs exploit.
+\end{abstract}
+
+\section{Introduction}
+\label{section:introduction}
+Large language models (LLMs) can generate locally coherent text with impressive fluency, but they often falter solving multi-step problems.
+The current dominant remedy is to structure reasoning.
+\textit{Chain-of-thought} (CoT) prompting elicits explicit intermediate reasoning steps in a linear progression \cite{wei2022cot}, an idea on which \textbf{Tree-of-Thoughts} (ToT) builds, framing reasoning as a tree rather than as a line, facilitating more robust exploration of the thought space \cite{yao2023tot}.
+While ToT improves robustness, two limitations emerge in practice.
+\textbf{First, utility saturation:} even with a large sampling budget, ToT produces only a handful of genuinely distinct high-utility continuations, leaving current frontier-scale compute under-utilised.
+\textbf{Second, myopic pruning:} branches deemed low-utility early in the search are discarded even when they remain logically sound and could mature into correct solutions.
+
+We propose \textbf{Lateral Tree-of-Thoughts (LToT)} to overcome this limitation.
+Drawing on de Bono's concept of \textit{lateral thinking} \cite{debono1967lateral}, LToT attaches two scores to every partial trace: a utility score $v$ in vanilla ToT and a \textit{logical-consistency} score $c \in [0, 1]$.
+A branch is retained if it ranks highly on $v$ (mainline) \textbf{or} exceeds a minimum threshold on $c$ (lateral), and we record whether a branch was added as a mainline or lateral branch.
+By preserving such diversity, LToT mitigates premature pruning, supports systematic error correction, and lays the groundwork for an explicit exploration-exploitation policy that adaptively decides when to deepen or diversify the search.
+The sections that follow motivate the need for lateral branches (\ref{section:motivation}), survey prior work (\ref{section:prior-work}), define current challenges (\ref{section:current-challenges}), detail the algorithmic framework (\ref{section:algorithmic-framework}), and outline our immediate research agenda (\ref{section:next-steps}).
+
+
+\section{Motivation}
+\label{section:motivation}
+
+In practice for frontier reasoning models, vanilla ToT can generate only a handful of genuinely distinct, high-utility continuations before utility mass saturates.
+Sampling more aggressively (larger $k$, higher temperature) mostly yields near-duplicates whose scores fall just below the pruning threshold, so the search frontier stays narrow even when ample compute is available.
+The result is an \textbf{expansion-budget surplus}: we have resources to deepen the tree but too few promising nodes to extend.
+
+LToT converts this spare capacity into productive search by admitting \textbf{lateral branches}---paths with low utility $v$ yet high logical consistency $c$.
+Our central hypothesis is that, once the mainline space is saturated, allocating extra compute to lateral children yields a higher marginal gain in efficacy than adding further mainline variants.
+
+
+\section{Prior Work}
+\label{section:prior-work}
+
+Early progress in multi-step reasoning stemmed from \textit{chain-of-thought} (CoT) prompting, which coaxes language models to spell out a single, linear sequence of intermediate steps—transparent, yet brittle once an early link is flawed \cite{wei2022cot}.
+\textit{Tree-of-Thoughts} (ToT) countered this fragility by allowing the model to generate a branching tree of continuations and then prune them using a utility score $v$, thus replacing a one-dimensional path with a structured search space \cite{yao2023tot}.
+Later variants add program supervision \cite{gao2022pal} or self-reflection \cite{madaan2023selfrefine}, but because they still rely on the same utility heuristic they continue to discard logically sound branches that begin with low $v$.
+
+LToT synthesises these lines by attaching to each partial trace a utility score $v$ \textbf{and} a logical-consistency score $c$.
+Branches scoring high on $v$ are retained as \textbf{mainline branches}, while low-$v$ but high-$c$ branches are preserved as \textbf{lateral branches}.
+This dual-score criterion injects principled diversity, addressing the premature-pruning limitation of vanilla ToT.
+
+
+\section{Current Challenges}
+\label{section:current-challenges}
+
+We presently face two principal algorithmic challenges:
+
+\begin{enumerate}
+   \item
+      \textbf{Reliable identification of low-utility yet logically consistent children.}
+      Our provisional approach is *self-evaluation*: we ask a language model—either the generator, the utility critic, or a separate model—to score each candidate's coherence with its ancestor trace via an entailment-style probe.
+      Because current LLMs still struggle to judge multi-step consistency, this method may prove insufficient, making the problem the first major focus of our research.
+   \item
+      \textbf{Dynamic balance between exploration and exploitation.}
+      At each search step, the key question is whether to \textbf{explore}---extending children from lateral branches---or \textbf{exploit} by extending children from mainline branches.
+      Deciding when to pivot between exploration and exploitation remains unresolved and constitutes the second major focus of our research.
+\end{enumerate}
+
+
+\section{Algorithmic Framework}
+\label{section:algorithmic-framework}
+
+\begin{enumerate}
+   \item
+      \textbf{Thought Generation.}
+      As in vanilla ToT, the language model proposes $k$ candidate continuations for the current trace.
+   \item
+      \textbf{State Evaluation.}
+      Each candidate receives (i) a heuristic utility score $v$ and (ii) a \textit{consistency score} $c \in [0, 1]$ estimating how well it coheres with its ancestor trace.
+      A continuous $c$ captures the evaluator's uncertainty more reliably than a simple binary boolean.
+   \item
+      \textbf{Branch Retention.}
+      We keep a frontier comprising candidates that are either in the top-$p$ quantile of $v$ \textbf{or} exceed a threshold $c_{\text{min}}$.
+      Children admitted by high $v$ form \textbf{mainline branches}; those admitted by high $c$ but low $v$ form \textbf{lateral branches}.
+   \item
+      \textbf{Search Control.}
+      How best to alternate exploration of lateral branches with exploitation of mainline branches remains an open research question.
+   \item
+      \textbf{Solution Extraction.}
+      Following vanilla ToT, we return the highest-utility complete trace encountered---or an ensemble vote if multiple high-quality solutions emerge.
+\end{enumerate}
+
+
+\section{Next Steps}
+\label{section:next-steps}
+
+
+\begin{enumerate}
+   \item
+      \textbf{Reliably evaluating the logical consistency of a candidate for a trace.}
+      Language models still struggle to replicate human capacity to ascertain the logical consistency a statement has with a set of previous statements \cite{ghosh2025logical}.
+   \item
+      \textbf{Balancing between exploration and exploitation.}
+\end{enumerate}
+
+
+\section{Conclusion}
+\label{section:conclusion}
+
+Vanilla ToT typically offers only a handful of genuinely new high-utility continuations---far fewer than modern, frontier-scale compute budgets could afford to expand---so once those mainline options are exhausted, extra compute yields rapidly diminishing returns.
+\textbf{Lateral Tree-of-Thoughts (LToT)} redirects that surplus capacity toward \textit{lateral branches}---paths that score poorly on the utility heuristic yet remain logically coherent.
+By attaching a dual score $\langle v, c\rangle$ to every partial trace and admitting both \textbf{mainline} (high-$v$) and \textbf{lateral} (low-$v$, high-$c$) continuations, LToT enlarges the frontier of exploration without abandoning ToT's disciplined pruning.
+
+The immediate milestones are clear: (i) a reliable detector for logically consistent low-utility children and (ii) an adaptive policy that decides when to explore laterals versus exploit mainlines.
+Our upcoming experiments will test whether, under production-scale compute, investing in lateral expansion yields higher marginal accuracy than sampling ever-more mainline variants.
+
+If these hypotheses bear out, LToT will transform the expansion-budget surplus of modern LLMs into tangible reasoning gains, bringing us a step closer to human-level versatility in structured problem solving.
+
+\end{document}
