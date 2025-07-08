@@ -86,7 +86,7 @@ We presently face two principal algorithmic challenges:
 \begin{enumerate}
    \item
       \textbf{Reliable identification of low-utility yet logically consistent children.}
-      Our provisional approach is *self-evaluation*: we ask a language model—either the generator, the utility critic, or a separate model—to score each candidate's coherence with its ancestor trace via an entailment-style probe.
+      Our provisional approach is \textit{self-evaluation}: we ask a language model—either the generator, the utility critic, or a separate model—to score each candidate's coherence with its ancestor trace via an entailment-style probe.
       Because current LLMs still struggle to judge multi-step consistency, this method may prove insufficient, making the problem the first major focus of our research.
    \item
       \textbf{Dynamic balance between exploration and exploitation.}
