@@ -1,14 +1,27 @@
 \documentclass{IEEEtran}
 
 \usepackage{amsmath}
+\usepackage[backend=biber,style=ieee]{biblatex}
 \usepackage{fontspec}
+\usepackage{hyperref}
 
 \newfontfamily\devanagarifont[Script=Devanagari]{Noto Serif Devanagari}
 \newfontfamily\gurmukhifont[Script=Gurmukhi]{Noto Sans Gurmukhi}
 
+\addbibresource{ltot-an-introductory-overview.bib}
+
 \title{Lateral Tree-of-Thoughts (LToT): An Introductory Overview}
-\author{Abhinav Madahar · {\devanagarifont अभिनव} {\gurmukhifont ਮਦਾਹਰ} <abhinavmadahar@gmail.com>}
+\author{<abhinavmadahar@gmail.com>}
 \date{July 8, 2025}
+
+\author{
+   \IEEEauthorblockN{Abhinav Madahar · {\devanagarifont अभिनव} {\gurmukhifont ਮਦਾਹਰ}}\\
+   \IEEEauthorblockA{
+      Independent Computer Scientist\\
+      Email: \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}
+   }
+}
+
 
 \begin{document}
 
@@ -130,5 +143,7 @@ The immediate milestones are clear: (i) a reliable detector for logically consis
 Our upcoming experiments will test whether, under production-scale compute, investing in lateral expansion yields higher marginal accuracy than sampling ever-more mainline variants.
 
 If these hypotheses bear out, LToT will transform the expansion-budget surplus of modern LLMs into tangible reasoning gains, bringing us a step closer to human-level versatility in structured problem solving.
+
+\printbibliography
 
 \end{document}

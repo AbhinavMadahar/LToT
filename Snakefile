@@ -1,21 +1,20 @@
 ###############################################################################
 # Snakefile   – build each Markdown file listed in config.yaml into a PDF
 ###############################################################################
-from pathlib import Path
-from glob import glob
+configfile: "snakefile-config.yaml"
+
 import os
+
+from glob import glob
+from pathlib import Path
 
 # ------------------------------------------------------------------ #
 # 1  Configuration
 # ------------------------------------------------------------------ #
-EXCLUDE_DIRS = {"env", "external"}          # add more if needed
+pdf_targets = []
 
-tex_files = [
-    p for p in Path(".").rglob("*.tex")
-    if not EXCLUDE_DIRS.intersection(p.parts)   # skip if any part is env/ or external/
-]
-
-pdf_targets = [str(p.with_suffix(".pdf")) for p in tex_files]
+texfiles_to_build = config.get('texfiles_to_build', {})
+pdf_targets += texfiles_to_build.keys()
 
 # ------------------------------------------------------------------ #
 # 2  Top-level target
@@ -38,8 +37,7 @@ rule tex_to_pdf:
     output:
         "{path}.pdf"
     input:
-        tex = lambda wc: f"{wc.path}.tex",
-        bib = lambda wc: f"{wc.path}.bib",
+        tex = lambda wc: texfiles_to_build[f"{wc.path}.pdf"]["tex"],
     log:
         "{path}.log"
     shell:
@@ -67,6 +65,10 @@ rule tex_to_pdf:
         # ---------- optional 4th pass (rarely needed) -----------------------
         # xelatex -interaction=nonstopmode -halt-on-error \
         #         -output-directory="$outdir" "$texfile"  >> {log:q} 2>&1
+
+        # ---------- move the built pdf to the desired filename --------------
+        mv -f "$outdir/$basename.pdf" {output:q}
+
 
         # ---------- cleanup auxiliaries ------------------------------------
         if [[ -f {output:q} ]]; then
