@@ -1,4 +1,4 @@
-\documentclass{IEEEtran}
+\documentclass[onecolumn]{IEEEtran}
 
 \usepackage{amsmath}
 \usepackage[backend=biber,style=ieee]{biblatex}
@@ -121,14 +121,27 @@ We presently face two principal algorithmic challenges:
 
 \section{Next Steps}
 \label{section:next-steps}
-
+The two main subproblems on which we are focusing are detailed below.
 
 \begin{enumerate}
-   \item
-      \textbf{Reliably evaluating the logical consistency of a candidate for a trace.}
-      Language models still struggle to replicate human capacity to ascertain the logical consistency a statement has with a set of previous statements \cite{ghosh2025logical}.
-   \item
-      \textbf{Balancing between exploration and exploitation.}
+    \item
+        \textbf{Reliably evaluating the logical consistency of a candidate for a trace.}
+        Language models still struggle to evaluate whether a statement is logically consistent with a set of previous statements \cite{ghosh2025logical,liu2025logicalconsistency,chen2025justlogic,wan2024logicasker}.
+        This complicates our current approach, where we use a language model to evaluate whether a candidate from the frontier, though low-utility, is logically consistent and as such heads a viable lateral branch.
+        At present, we already accommodate language models' imperfect ability to verify logical consistency by asking the language model to provide its confidence from zero to one, inclusive, of the logical consistency a candidate from the frontier has with an ancestral trace, akin to the continuous output of an MLP rather than to the step function of a biological neuron's activation.
+        We plan to initially continue with this approach and empirically evaluate its viability.
+        If it proves untenable, then we will explore alternative techniques for verifying logical consistency.
+    \item
+        \textbf{Balancing between exploration and exploitation.}
+        We have not settled on an approach for balancing between exploration---expanding on lateral branches---and exploitation---expanding on mainline branches.
+        Intuitively, it seems promising to mimic the human approach, relying on exploitation and only turning to exploration after all mainline branches have been exhausted without a solution having formed.
+        The classic example of this is an exasperated undergraduate studying integral calculus, who, having applied all reasonable integration techniques to a given integral to no avail, begins applying any integration technique which they can remember, however absurd to apply to the problem at hand.
+        Based on this intuition from human intelligence, we intend to proceed as vanilla ToT does, expanding mainline branches, until we have reasonably exhausted the mainline thought search space.
+        Our working definition for exhaustion is the expansion of mainline branches to a substantial depth without finding a solution.
+        If we have exhausted the mainline search space, then we begin expanding lateral branches.
+        Recall that children of lateral branches need not themselves be lateral---a lateral branch can have mainline children, the equivalent of the undergraduate who, upon applying $u$-substition in an unusual context for it, proceeds as normative for $u$-substition.
+        Importantly, this addresses a major weakness of vanilla ToT: frontier compute environments can expand on more branches than what vanilla ToT is able to provide.
+        We will spend the coming weeks distilling this human-inspired intuition for balancing between exploration and exploitation into a finalized technique.
 \end{enumerate}
 
 

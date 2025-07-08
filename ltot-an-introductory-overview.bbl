@@ -411,6 +411,169 @@
       \verb https://arxiv.org/abs/2412.16100
       \endverb
     \endentry
+    \entry{liu2025logicalconsistency}{inproceedings}{}{}
+      \name{author}{6}{}{%
+        {{hash=85f4f34153fe00941bce38ecec56b83d}{%
+           family={Liu},
+           familyi={L\bibinitperiod},
+           given={Yinhong},
+           giveni={Y\bibinitperiod}}}%
+        {{hash=633655105cce12df155eb251cc410dca}{%
+           family={Guo},
+           familyi={G\bibinitperiod},
+           given={Zhijiang},
+           giveni={Z\bibinitperiod}}}%
+        {{hash=0d06f472c7bdc3a2fc12b566020e3e0e}{%
+           family={Liang},
+           familyi={L\bibinitperiod},
+           given={Tianya},
+           giveni={T\bibinitperiod}}}%
+        {{hash=1ea33b134f93a7ff8357d3c859b406ba}{%
+           family={Shareghi},
+           familyi={S\bibinitperiod},
+           given={Ehsan},
+           giveni={E\bibinitperiod}}}%
+        {{hash=9fa17331489449c86886282786aa6111}{%
+           family={Vulić},
+           familyi={V\bibinitperiod},
+           given={Ivan},
+           giveni={I\bibinitperiod}}}%
+        {{hash=c4d16f6b44a9b643eaf17e43b626a15e}{%
+           family={Collier},
+           familyi={C\bibinitperiod},
+           given={Nigel},
+           giveni={N\bibinitperiod}}}%
+      }
+      \strng{namehash}{75ca3a03ad6540383df6d46f282b846c}
+      \strng{fullhash}{1522a831fc3dfd6b3f2ca20dd8ab9408}
+      \strng{fullhashraw}{1522a831fc3dfd6b3f2ca20dd8ab9408}
+      \strng{bibnamehash}{1522a831fc3dfd6b3f2ca20dd8ab9408}
+      \strng{authorbibnamehash}{1522a831fc3dfd6b3f2ca20dd8ab9408}
+      \strng{authornamehash}{75ca3a03ad6540383df6d46f282b846c}
+      \strng{authorfullhash}{1522a831fc3dfd6b3f2ca20dd8ab9408}
+      \strng{authorfullhashraw}{1522a831fc3dfd6b3f2ca20dd8ab9408}
+      \field{sortinit}{8}
+      \field{sortinithash}{a231b008ebf0ecbe0b4d96dcc159445f}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{booktitle}{Proceedings of the International Conference on Learning Representations (ICLR)}
+      \field{note}{arXiv:2410.02205\,–\,v4, last revised 5 Feb 2025}
+      \field{title}{Measuring, Evaluating and Improving Logical Consistency in Large Language Models}
+      \field{year}{2025}
+      \verb{urlraw}
+      \verb https://arxiv.org/abs/2410.02205
+      \endverb
+      \verb{url}
+      \verb https://arxiv.org/abs/2410.02205
+      \endverb
+    \endentry
+    \entry{chen2025justlogic}{inproceedings}{}{}
+      \name{author}{3}{}{%
+        {{hash=7b02fbfad4ab344188ff552c6c2f3000}{%
+           family={Chen},
+           familyi={C\bibinitperiod},
+           given={Michael\bibnamedelima K.},
+           giveni={M\bibinitperiod\bibinitdelim K\bibinitperiod}}}%
+        {{hash=0062b3d93aad0fef37c9aa27dc6d165b}{%
+           family={Zhang},
+           familyi={Z\bibinitperiod},
+           given={Xikun},
+           giveni={X\bibinitperiod}}}%
+        {{hash=f15b34a2bc944a9f055fd6e2e3a7c460}{%
+           family={Tao},
+           familyi={T\bibinitperiod},
+           given={Dacheng},
+           giveni={D\bibinitperiod}}}%
+      }
+      \strng{namehash}{c65407d3f732789e4444bb49da5ad2c6}
+      \strng{fullhash}{dbf0b755775f24c995fa3ffffa2e9341}
+      \strng{fullhashraw}{dbf0b755775f24c995fa3ffffa2e9341}
+      \strng{bibnamehash}{dbf0b755775f24c995fa3ffffa2e9341}
+      \strng{authorbibnamehash}{dbf0b755775f24c995fa3ffffa2e9341}
+      \strng{authornamehash}{c65407d3f732789e4444bb49da5ad2c6}
+      \strng{authorfullhash}{dbf0b755775f24c995fa3ffffa2e9341}
+      \strng{authorfullhashraw}{dbf0b755775f24c995fa3ffffa2e9341}
+      \field{sortinit}{8}
+      \field{sortinithash}{a231b008ebf0ecbe0b4d96dcc159445f}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{booktitle}{Proceedings of the International Conference on Learning Representations (ICLR)}
+      \field{note}{OpenReview ID THSm9HyCKo, first posted 26 Sep 2024}
+      \field{title}{JustLogic: A Benchmark for Natural Language Deductive Reasoning}
+      \field{year}{2025}
+      \verb{urlraw}
+      \verb https://openreview.net/forum?id=THSm9HyCKo
+      \endverb
+      \verb{url}
+      \verb https://openreview.net/forum?id=THSm9HyCKo
+      \endverb
+    \endentry
+    \entry{wan2024logicasker}{inproceedings}{}{}
+      \name{author}{8}{}{%
+        {{hash=747384ae31b320890e9936a8dc82b11d}{%
+           family={Wan},
+           familyi={W\bibinitperiod},
+           given={Yuxuan},
+           giveni={Y\bibinitperiod}}}%
+        {{hash=ea392bf57e05695a2a152ef2a5fc6062}{%
+           family={Wang},
+           familyi={W\bibinitperiod},
+           given={Wenxuan},
+           giveni={W\bibinitperiod}}}%
+        {{hash=aadd2e38185ad6109fa4b6e2a8639e29}{%
+           family={Yang},
+           familyi={Y\bibinitperiod},
+           given={Yiliu},
+           giveni={Y\bibinitperiod}}}%
+        {{hash=4e5e9d2faa74778e43384ce5229d7f0b}{%
+           family={Yuan},
+           familyi={Y\bibinitperiod},
+           given={Youliang},
+           giveni={Y\bibinitperiod}}}%
+        {{hash=89b1df74e705c42ddbac5a9acc06db0b}{%
+           family={Huang},
+           familyi={H\bibinitperiod},
+           given={Jen{-}tse},
+           giveni={J\bibinitperiod}}}%
+        {{hash=7a3899b05fe89d81bde7cd496b988c16}{%
+           family={He},
+           familyi={H\bibinitperiod},
+           given={Pinjia},
+           giveni={P\bibinitperiod}}}%
+        {{hash=f110ce86484807bc90564cb31eacf3da}{%
+           family={Jiao},
+           familyi={J\bibinitperiod},
+           given={Wenxiang},
+           giveni={W\bibinitperiod}}}%
+        {{hash=89afa2af91c8dfa048fdcec740d6684e}{%
+           family={Lyu},
+           familyi={L\bibinitperiod},
+           given={Michael\bibnamedelima R.},
+           giveni={M\bibinitperiod\bibinitdelim R\bibinitperiod}}}%
+      }
+      \strng{namehash}{e0484efbd6b78aac99902da482957668}
+      \strng{fullhash}{5f410052a5892ce855c5ac09ddeece70}
+      \strng{fullhashraw}{5f410052a5892ce855c5ac09ddeece70}
+      \strng{bibnamehash}{e0484efbd6b78aac99902da482957668}
+      \strng{authorbibnamehash}{e0484efbd6b78aac99902da482957668}
+      \strng{authornamehash}{e0484efbd6b78aac99902da482957668}
+      \strng{authorfullhash}{5f410052a5892ce855c5ac09ddeece70}
+      \strng{authorfullhashraw}{5f410052a5892ce855c5ac09ddeece70}
+      \field{sortinit}{8}
+      \field{sortinithash}{a231b008ebf0ecbe0b4d96dcc159445f}
+      \field{labelnamesource}{author}
+      \field{labeltitlesource}{title}
+      \field{booktitle}{Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing (EMNLP)}
+      \field{note}{arXiv:2401.00757\,–\,v3, accepted EMNLP 2024}
+      \field{title}{LogicAsker: Evaluating and Improving the Logical Reasoning Ability of Large Language Models}
+      \field{year}{2024}
+      \verb{urlraw}
+      \verb https://arxiv.org/abs/2401.00757
+      \endverb
+      \verb{url}
+      \verb https://arxiv.org/abs/2401.00757
+      \endverb
+    \endentry
   \enddatalist
 \endrefsection
 \endinput
