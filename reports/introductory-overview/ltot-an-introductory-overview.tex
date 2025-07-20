@@ -15,11 +15,11 @@
 \date{July 8, 2025}
 
 \author{
-   \IEEEauthorblockN{Abhinav Madahar · {\devanagarifont अभिनव} {\gurmukhifont ਮਦਾਹਰ}}\\
-   \IEEEauthorblockA{
-      Independent Computer Scientist\\
-      Email: \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}
-   }
+    \IEEEauthorblockN{Abhinav Madahar · {\devanagarifont अभिनव} {\gurmukhifont ਮਦਾਹਰ}}\\
+    \IEEEauthorblockA{
+        Independent Computer Scientist\\
+        Email: \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}
+    }
 }
 
 
@@ -28,15 +28,15 @@
 \maketitle
 
 \begin{abstract}
-   We introduce \textbf{Lateral Tree-of-Thoughts (LToT)}, a reasoning architecture that augments the vanilla Tree-of-Thoughts (ToT) paradigm by explicitly modelling \textit{lateral} thinking---retaining low-utility yet logically consistent child thoughts.
-   In frontier-scale settings, vanilla ToT saturates quickly: after a few genuinely distinct high-utility continuations, additional sampling yields near-duplicates, leaving modern compute budgets under-utilised.
-   LToT fills this gap.
+    We introduce \textbf{Lateral Tree-of-Thoughts (LToT)}, a reasoning architecture that augments the vanilla Tree-of-Thoughts (ToT) paradigm by explicitly modelling \textit{lateral} thinking---retaining low-utility yet logically consistent child thoughts.
+    In frontier-scale settings, vanilla ToT saturates quickly: after a few genuinely distinct high-utility continuations, additional sampling yields near-duplicates, leaving modern compute budgets under-utilised.
+    LToT fills this gap.
 
-   LToT generates a dual score $\langle v, c\rangle$ for every candidate in the frontier where $v$ is the utility as in vanilla ToT and $c \in [0, 1]$ is the logical consistency the candidate has with its ancestral trace.
-   We then preserve \textbf{mainline} branches (high-$v$) and \textbf{lateral} branches (low-$v$, high-$c$), laying the groundwork for an adaptive policy that decides when to explore laterals versus exploit mainlines.
-   By converting surplus compute into principled diversity, LToT mitigates premature pruning, supports error correction, and moves reasoning architectures closer to human-level versatility in logical inference and creative problem-solving.
+    LToT generates a dual score $\langle v, c\rangle$ for every candidate in the frontier where $v$ is the utility as in vanilla ToT and $c \in [0, 1]$ is the logical consistency the candidate has with its ancestral trace.
+    We then preserve \textbf{mainline} branches (high-$v$) and \textbf{lateral} branches (low-$v$, high-$c$), laying the groundwork for an adaptive policy that decides when to explore laterals versus exploit mainlines.
+    By converting surplus compute into principled diversity, LToT mitigates premature pruning, supports error correction, and moves reasoning architectures closer to human-level versatility in logical inference and creative problem-solving.
 
-   We summarise the architecture and the two subproblems we are currently addressing: (1) reliably identifying logically consistent low-utility branches and (2) deciding when to explore vs exploit.
+    We summarise the architecture and the two subproblems we are currently addressing: (1) reliably identifying logically consistent low-utility branches and (2) deciding when to explore vs exploit.
 \end{abstract}
 
 \section{Introduction}
@@ -84,14 +84,14 @@ This dual-score criterion injects principled diversity, addressing the premature
 We presently face two principal algorithmic challenges:
 
 \begin{enumerate}
-   \item
-      \textbf{Reliable identification of low-utility yet logically consistent children.}
-      Our provisional approach is \textit{self-evaluation}: we ask a language model—either the generator, the utility critic, or a separate model—to score each candidate's coherence with its ancestor trace via an entailment-style probe.
-      Because current LLMs still struggle to judge multi-step consistency, this method may prove insufficient, making the problem the first major focus of our research.
-   \item
-      \textbf{Dynamic balance between exploration and exploitation.}
-      At each search step, the key question is whether to \textbf{explore}---extending children from lateral branches---or \textbf{exploit} by extending children from mainline branches.
-      Deciding when to pivot between exploration and exploitation remains unresolved and constitutes the second major focus of our research.
+    \item
+        \textbf{Reliable identification of low-utility yet logically consistent children.}
+        Our provisional approach is \textit{self-evaluation}: we ask a language model—either the generator, the utility critic, or a separate model—to score each candidate's coherence with its ancestor trace via an entailment-style probe.
+        Because current LLMs still struggle to judge multi-step consistency, this method may prove insufficient, making the problem the first major focus of our research.
+    \item
+        \textbf{Dynamic balance between exploration and exploitation.}
+        At each search step, the key question is whether to \textbf{explore}---extending children from lateral branches---or \textbf{exploit} by extending children from mainline branches.
+        Deciding when to pivot between exploration and exploitation remains unresolved and constitutes the second major focus of our research.
 \end{enumerate}
 
 
@@ -99,24 +99,24 @@ We presently face two principal algorithmic challenges:
 \label{section:algorithmic-framework}
 
 \begin{enumerate}
-   \item
-      \textbf{Thought Generation.}
-      As in vanilla ToT, the language model proposes $k$ candidate continuations for the current trace.
-   \item
-      \textbf{State Evaluation.}
-      Each candidate receives (i) a heuristic utility score $v$ and (ii) a \textit{consistency score} $c \in [0, 1]$ estimating how well it coheres with its ancestor trace.
-      A continuous $c$ captures the evaluator's uncertainty more reliably than a simple binary boolean.
-   \item
-      \textbf{Branch Retention.}
-      We keep a frontier comprising candidates that are either in the top-$p$ quantile of $v$ \textbf{or} exceed a threshold $c_{\text{min}}$.
-      Children admitted by high $v$ form \textbf{mainline branches}; those admitted by high $c$ but low $v$ form \textbf{lateral branches}.
-   \item
-      \textbf{Search Control.}
-      How best to alternate exploration of lateral branches with exploitation of mainline branches remains an open research question.
-      We explain our current work in addressing this in \ref{section:next-steps}.
-   \item
-      \textbf{Solution Extraction.}
-      Following vanilla ToT, we return the highest-utility complete trace encountered---or an ensemble vote if multiple high-quality solutions emerge.
+    \item
+        \textbf{Thought Generation.}
+        As in vanilla ToT, the language model proposes $k$ candidate continuations for the current trace.
+    \item
+        \textbf{State Evaluation.}
+        Each candidate receives (i) a heuristic utility score $v$ and (ii) a \textit{consistency score} $c \in [0, 1]$ estimating how well it coheres with its ancestor trace.
+        A continuous $c$ captures the evaluator's uncertainty more reliably than a simple binary boolean.
+    \item
+        \textbf{Branch Retention.}
+        We keep a frontier comprising candidates that are either in the top-$p$ quantile of $v$ \textbf{or} exceed a threshold $c_{\text{min}}$.
+        Children admitted by high $v$ form \textbf{mainline branches}; those admitted by high $c$ but low $v$ form \textbf{lateral branches}.
+    \item
+        \textbf{Search Control.}
+        How best to alternate exploration of lateral branches with exploitation of mainline branches remains an open research question.
+        We explain our current work in addressing this in \ref{section:next-steps}.
+    \item
+        \textbf{Solution Extraction.}
+        Following vanilla ToT, we return the highest-utility complete trace encountered---or an ensemble vote if multiple high-quality solutions emerge.
 \end{enumerate}
 
 
@@ -125,24 +125,24 @@ We presently face two principal algorithmic challenges:
 The two main subproblems on which we are focusing are detailed below.
 
 \begin{enumerate}
-    \item
-        \textbf{Reliably evaluating the logical consistency of a candidate for a trace.}
-        Language models still struggle to evaluate whether a statement is logically consistent with a set of previous statements \cite{ghosh2025logical,liu2025logicalconsistency,chen2025justlogic,wan2024logicasker}.
-        This complicates our current approach, where we use a language model to evaluate whether a candidate from the frontier, though low-utility, is logically consistent and as such heads a viable lateral branch.
-        At present, we already accommodate language models' imperfect ability to verify logical consistency by asking the language model to provide its confidence from zero to one, inclusive, of the logical consistency a candidate from the frontier has with an ancestral trace, akin to the continuous output of an MLP rather than to the step function of a biological neuron's activation.
-        We plan to initially continue with this approach and empirically evaluate its viability.
-        If it proves untenable, then we will explore alternative techniques for verifying logical consistency.
-    \item
-        \textbf{Balancing between exploration and exploitation.}
-        We have not settled on an approach for balancing between exploration---expanding on lateral branches---and exploitation---expanding on mainline branches.
-        Intuitively, it seems promising to mimic the human approach, relying on exploitation and only turning to exploration after all mainline branches have been exhausted without a solution having formed.
-        The classic example of this is an exasperated undergraduate studying integral calculus, who, having applied all reasonable integration techniques to a given integral to no avail, begins applying any integration technique which they can remember, however absurd to apply to the problem at hand.
-        Based on this intuition from human intelligence, we intend to proceed as vanilla ToT does, expanding mainline branches, until we have reasonably exhausted the mainline thought search space.
-        Our working definition for exhaustion is the expansion of mainline branches to a substantial depth without finding a solution.
-        If we have exhausted the mainline search space, then we begin expanding lateral branches.
-        Recall that children of lateral branches need not themselves be lateral---a lateral branch can have mainline children, the equivalent of the undergraduate who, upon applying $u$-substition in an unusual context for it, proceeds as normative for $u$-substition.
-        Importantly, this addresses a major weakness of vanilla ToT: frontier compute environments can expand on more branches than what vanilla ToT is able to provide.
-        We will spend the coming weeks distilling this human-inspired intuition for balancing between exploration and exploitation into a finalized technique.
+     \item
+          \textbf{Reliably evaluating the logical consistency of a candidate for a trace.}
+          Language models still struggle to evaluate whether a statement is logically consistent with a set of previous statements \cite{ghosh2025logical,liu2025logicalconsistency,chen2025justlogic,wan2024logicasker}.
+          This complicates our current approach, where we use a language model to evaluate whether a candidate from the frontier, though low-utility, is logically consistent and as such heads a viable lateral branch.
+          At present, we already accommodate language models' imperfect ability to verify logical consistency by asking the language model to provide its confidence from zero to one, inclusive, of the logical consistency a candidate from the frontier has with an ancestral trace, akin to the continuous output of an MLP rather than to the step function of a biological neuron's activation.
+          We plan to initially continue with this approach and empirically evaluate its viability.
+          If it proves untenable, then we will explore alternative techniques for verifying logical consistency.
+     \item
+          \textbf{Balancing between exploration and exploitation.}
+          We have not settled on an approach for balancing between exploration---expanding on lateral branches---and exploitation---expanding on mainline branches.
+          Intuitively, it seems promising to mimic the human approach, relying on exploitation and only turning to exploration after all mainline branches have been exhausted without a solution having formed.
+          The classic example of this is an exasperated undergraduate studying integral calculus, who, having applied all reasonable integration techniques to a given integral to no avail, begins applying any integration technique which they can remember, however absurd to apply to the problem at hand.
+          Based on this intuition from human intelligence, we intend to proceed as vanilla ToT does, expanding mainline branches, until we have reasonably exhausted the mainline thought search space.
+          Our working definition for exhaustion is the expansion of mainline branches to a substantial depth without finding a solution.
+          If we have exhausted the mainline search space, then we begin expanding lateral branches.
+          Recall that children of lateral branches need not themselves be lateral---a lateral branch can have mainline children, the equivalent of the undergraduate who, upon applying $u$-substition in an unusual context for it, proceeds as normative for $u$-substition.
+          Importantly, this addresses a major weakness of vanilla ToT: frontier compute environments can expand on more branches than what vanilla ToT is able to provide.
+          We will spend the coming weeks distilling this human-inspired intuition for balancing between exploration and exploitation into a finalized technique.
 \end{enumerate}
 
 
