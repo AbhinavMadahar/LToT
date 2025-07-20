@@ -74,4 +74,6 @@ rule tex_to_pdf:
         if [[ -f {output:q} ]]; then
             latexmk -c -silent -output-directory="$outdir" "$texfile"
         fi
+        rm -f "$basename.bbl"  # for some reason, a .bbl file is left in the
+                               # repo top directory. we remove it here
         """
