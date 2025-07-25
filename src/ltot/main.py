@@ -13,9 +13,10 @@ Vanilla ToT is also supported, and can be used by setting the lateral width to z
 
 import argparse
 import logging
+import sys
 
 
-if __name__ == '__main__':
+def main() -> None:
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Lateral Tree-of-Thoughts (LToT) Application')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
@@ -46,3 +47,12 @@ if __name__ == '__main__':
     # Main application logic
     logger.info('Starting experiment...')
     raise NotImplementedError('Experiment logic is not implemented yet.')
+
+if __name__ == '__main__':
+    try:
+        main()
+    except KeyboardInterrupt:
+        logging.info('Experiment interrupted by user.')
+
+        EXIT_CODE_FOR_KEYBOARD_INTERRUPT = 130
+        sys.exit(EXIT_CODE_FOR_KEYBOARD_INTERRUPT)
