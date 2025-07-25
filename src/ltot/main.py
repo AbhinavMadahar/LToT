@@ -48,6 +48,7 @@ def main() -> None:
     logger.info('Starting experiment...')
     raise NotImplementedError('Experiment logic is not implemented yet.')
 
+
 if __name__ == '__main__':
     try:
         main()
