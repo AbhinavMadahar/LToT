@@ -1,0 +1,8 @@
+# Core experiment framework
+snakemake==9.*              # workflow engine with Slurm executor plugin
+
+# Interactive exploratory tools
+jupyterlab==4.*             # modern Jupyter interface (supersedes classic notebook)
+
+# Language-model toolkit
+transformers==4.*           # Hugging Face library for loading GPT/Llama/etc.
