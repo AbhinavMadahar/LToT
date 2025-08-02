@@ -11,8 +11,11 @@ This works on almost all Unix-like systems, including Linux and macOS.
 
 ```bash
 snakemake \
-    --cores "$(getconf _NPROCESSORS_ONLN 2>/dev/null || \
-               getconf NPROCESSORS_ONLN 2>/dev/null || echo 1)" \
+    --cores "$(
+        getconf _NPROCESSORS_ONLN 2>/dev/null ||
+        getconf NPROCESSORS_ONLN 2>/dev/null ||
+        { echo 'Unable to find number of cores. Defaulting to 1.' >&2; echo 1; }
+    )"
     --forceall \
     --rerun-incomplete \
     --use-conda \
