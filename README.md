@@ -2,6 +2,26 @@
 
 **Author: Abhinav Madahar · अभिनव ਮਦਾਹਰ <abhinavmadahar@gmail.com>**
 
+## Quickstart to Reproducing the Results (Madahar 2025)
+
+The following command will reproduce the results from the paper "Lateral Tree-of-Thoughts" by Abhinav Madahar et al. (2025).
+It runs every experiment in the paper; generates the figures, tables, and diagrams; and produces the final document, stored at `paper/Lateral Tree-of-Thoughts (Abhinav Madahar et al).pdf`.
+It is deterministic because the seed values are set, so running it will exactly reproduce the results.
+This works on almost all Unix-like systems, including Linux and macOS.
+
+```bash
+snakemake \
+    --cores "$(getconf _NPROCESSORS_ONLN 2>/dev/null || \
+               getconf NPROCESSORS_ONLN 2>/dev/null || echo 1)" \
+    --forceall \
+    --rerun-incomplete \
+    --use-conda \
+    --conda-prefix ".snakemake/conda" \
+    "paper/Lateral Tree-of-Thoughts (Abhinav Madahar et al).pdf"
+```
+
+TODO: give estimates for running time and disk space.
+
 ## Description
 
 ### Lateral Tree-of-Thoughts (LToT)
@@ -26,11 +46,3 @@
 
 * **Consistency evaluation:** building reliable detectors for logically consistent, low-utility branches.
 * **Exploration vs. exploitation:** formalising when to switch from mainline depth-first progress to lateral breadth-first rescue.
-
-#### Roadmap
-
-Near-term milestones are (i) a robust logical-consistency scorer and (ii) an adaptive exploration-exploitation policy; success would turn latent compute headroom into measurable reasoning gains.
-
-## Guide to Reproducing the Results of (Madahar, 2025)
-
-TODO
