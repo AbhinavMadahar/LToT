@@ -4,6 +4,18 @@
 
 ## Quickstart to Reproducing the Results (Madahar 2025)
 
+First, you will need a Hugging Face access token with read permissions for the models and datasets used in this project.
+You can create a token by logging into your Hugging Face account and navigating to [Settings > Access Tokens](https://huggingface.co/settings/tokens).
+Make sure to copy the token, as you will need it later.
+After creating the token, sign in through the Hugging Face CLI by running:
+
+```bash
+hf auth login
+```
+
+and pasting the token when prompted.
+Certain models require further access permissions, e.g. Llama-3 8B, so you may need to request access to them on the Hugging Face website.
+
 The following command will reproduce the results from the paper "Lateral Tree-of-Thoughts" by Abhinav Madahar et al. (2025).
 It runs every experiment in the paper; generates the figures, tables, and diagrams; and produces the final document, stored at `paper/Lateral Tree-of-Thoughts (Abhinav Madahar et al).pdf`.
 It is deterministic because the seed values are set, so running it will exactly reproduce the results.
@@ -24,6 +36,28 @@ snakemake \
 ```
 
 TODO: give estimates for running time and disk space.
+
+## Native dependencies (only for Llama-/Mistral-style models)
+
+If you plan to run models that rely on the **SentencePiece fast tokenizer** (e.g. *Mistral-7B*, *Llama-3-8B*), you might need a small C/C++ tool-chain so `sentencepiece` can compile.
+This is only necessary at the time of the preparation of this README.md (2025-08-04) because the corresponding wheel is not yet available, requiring the package to be built from source.
+On Debian-based systems (e.g. Ubuntu), you can install the required packages with:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake libprotobuf-dev protobuf-compiler
+```
+
+### Native dependencies (only for Llama- / Mistral-family models)
+
+Models that use the **SentencePiece *fast* tokenizer** (e.g. *Mistral-7B*, *Llama-3-8B*) require the `sentencepiece` C++ extension.
+As of **2025-08-04** there are **no pre-built wheels for Python 3.13**, so pip falls back to compiling from source.
+On Debian-based systems (e.g. Ubuntu), install the minimal build tool-chain once before installing from the pip requirements file:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential cmake libprotobuf-dev protobuf-compiler
+```
 
 ## Description
 

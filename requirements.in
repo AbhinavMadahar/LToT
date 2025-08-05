@@ -6,3 +6,13 @@ jupyterlab==4.*             # modern Jupyter interface (supersedes classic noteb
 
 # Language-model toolkit
 transformers==4.*           # Hugging Face library for loading GPT/Llama/etc.
+
+torch==2.*                  # PyTorch for model inference
+
+datasets==4.*               # Hugging Face datasets library for data handling
+
+protobuf==6.*
+sentencepiece==0.*
+
+accelerate==1.*
+bitsandbytes==0.*
