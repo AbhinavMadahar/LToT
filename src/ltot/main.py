@@ -209,7 +209,8 @@ def main() -> None:
     configuration = load_configuration(Path(args.configuration))
     logger.info('Experiment tag: %s  (seed=%s)', configuration.tag, configuration.seed)
 
-    set_global_seed(configuration.seed)
+    if configuration.seed is not None:
+        set_global_seed(configuration.seed)
 
     results_directory = make_results_directory(
         Path(args.results),
@@ -263,7 +264,7 @@ def main() -> None:
             configuration=configuration.search,
             device=device,
         )
-        is_correct = ans.strip() == str(item[configuration.dataset.answer_field]).strip()
+        is_correct = answer.strip() == str(item[configuration.dataset.answer_field]).strip()
         correct += int(is_correct)
 
         metrics_rows.append(
