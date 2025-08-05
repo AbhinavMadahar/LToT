@@ -37,22 +37,11 @@ snakemake \
 
 TODO: give estimates for running time and disk space.
 
-## Native dependencies (only for Llama-/Mistral-style models)
+### Native dependencies (only for Llama-/Mistral-style models)
 
 If you plan to run models that rely on the **SentencePiece fast tokenizer** (e.g. *Mistral-7B*, *Llama-3-8B*), you might need a small C/C++ tool-chain so `sentencepiece` can compile.
 This is only necessary at the time of the preparation of this README.md (2025-08-04) because the corresponding wheel is not yet available, requiring the package to be built from source.
 On Debian-based systems (e.g. Ubuntu), you can install the required packages with:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake libprotobuf-dev protobuf-compiler
-```
-
-### Native dependencies (only for Llama- / Mistral-family models)
-
-Models that use the **SentencePiece *fast* tokenizer** (e.g. *Mistral-7B*, *Llama-3-8B*) require the `sentencepiece` C++ extension.
-As of **2025-08-04** there are **no pre-built wheels for Python 3.13**, so pip falls back to compiling from source.
-On Debian-based systems (e.g. Ubuntu), install the minimal build tool-chain once before installing from the pip requirements file:
 
 ```bash
 sudo apt-get update
