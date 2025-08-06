@@ -1,79 +1,52 @@
-###############################################################################
-# Snakefile   – build each Markdown file listed in config.yaml into a PDF
-###############################################################################
-configfile: "snakefile-config.yaml"
-
-import os
-
-from glob import glob
-from pathlib import Path
+WHITE_PAPER_DESTINATION_FILE_PATH = 'reports/introductory-overview/LToT: An Introductory Overview (Abhinav Madahar).pdf'
+WHITE_PAPER_TEX_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.tex'
+WHITE_PAPER_BIB_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.bib'
+WHITE_PAPER_LOG_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.log'
 
 # ------------------------------------------------------------------ #
-# 1  Configuration
-# ------------------------------------------------------------------ #
-pdf_targets = []
-
-texfiles_to_build = config.get('texfiles_to_build', {})
-pdf_targets += texfiles_to_build.keys()
-
-# ------------------------------------------------------------------ #
-# 2  Top-level target
+# 1  Aggregate target
 # ------------------------------------------------------------------ #
 rule all:
-    input: pdf_targets
+    input: WHITE_PAPER_DESTINATION_FILE_PATH
 
-# Allow slashes (and spaces) inside the {path} wildcard
-wildcard_constraints:
-    path = ".+"
-
-###############################################################################
-# 4  TeX → PDF (XeLaTeX ± Biber) – cleans aux files afterwards
-###############################################################################
-
-rule tex_to_pdf:
-    """
-    Build {path}.pdf from {path}.tex (and {path}.bib if present).
-    """
+# ------------------------------------------------------------------ #
+# 2  Build the PDF (XeLaTeX ± Biber)
+# ------------------------------------------------------------------ #
+rule introductory_white_paper:
     output:
-        "{path}.pdf"
+        WHITE_PAPER_DESTINATION_FILE_PATH
     input:
-        tex = lambda wc: texfiles_to_build[f"{wc.path}.pdf"]["tex"],
+        tex = WHITE_PAPER_TEX_FILE_PATH,
+        bib = WHITE_PAPER_BIB_FILE_PATH
     log:
-        "{path}.log"
+        WHITE_PAPER_LOG_FILE_PATH
     shell:
-       r"""
+        r"""
         set -euo pipefail
 
-        texfile={input.tex:q}
-        outdir=$(dirname {input.tex:q})
-        basename=$(basename {input.tex:q} .tex)
+        texfile="{input.tex}"
+        outdir="$(dirname "$texfile")"
+        basename="$(basename "$texfile" .tex)"
         bcffile="$outdir/$basename.bcf"
+        pdffile="$outdir/$basename.pdf"
 
-        # ---------- 1 ⟶ XeLaTeX (writes .bcf if biblatex is loaded) ----------
+        # --- 1 ⟶ XeLaTeX (1st pass; writes .bcf if biblatex is loaded) ------
         xelatex -interaction=nonstopmode -halt-on-error \
-                -output-directory="$outdir" "$texfile"   >  {log:q} 2>&1
+                -output-directory="$outdir" "$texfile"    > {log} 2>&1
 
-        # ---------- 2 ⟶ Biber (ONLY if .bcf exists) -------------------------
+        # --- 2 ⟶ Biber (ONLY if .bcf exists) -------------------------------
         if [[ -f "$bcffile" ]]; then
-            biber --input-directory "$outdir" "$basename"   >> {log:q} 2>&1
+            biber --input-directory "$outdir" "$basename" >> {log} 2>&1
         fi
 
-        # ---------- 3 ⟶ XeLaTeX (resolve citations/refs) --------------------
+        # --- 3 ⟶ XeLaTeX (2nd pass; resolves citations/refs) ---------------
         xelatex -interaction=nonstopmode -halt-on-error \
-                -output-directory="$outdir" "$texfile"  >> {log:q} 2>&1
+                -output-directory="$outdir" "$texfile"   >> {log} 2>&1
 
-        # ---------- optional 4th pass (rarely needed) -----------------------
-        # xelatex -interaction=nonstopmode -halt-on-error \
-        #         -output-directory="$outdir" "$texfile"  >> {log:q} 2>&1
+        # --- Move PDF to final name (with spaces/colon/parentheses) ---------
+        mv -f "$pdffile" "{output}"
 
-        # ---------- move the built pdf to the desired filename --------------
-        mv -f "$outdir/$basename.pdf" {output:q}
-
-
-        # ---------- cleanup auxiliaries ------------------------------------
-        if [[ -f {output:q} ]]; then
-            latexmk -c -silent -output-directory="$outdir" "$texfile"
-        fi
-        rm -f "$basename.bbl"  # for some reason, a .bbl file is left in the
-                               # repo top directory. we remove it here
+        # --- Clean auxiliary files -----------------------------------------
+        latexmk -c -silent -output-directory="$outdir" "$texfile"
+        rm -f "$basename.bbl"   # stray file sometimes left at repo root
         """
