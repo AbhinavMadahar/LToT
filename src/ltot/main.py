@@ -17,6 +17,7 @@ import argparse
 import datetime
 import huggingface_hub
 import logging
+import itertools
 import json
 import numpy as np
 import random
@@ -29,9 +30,10 @@ import yaml
 from dataclasses import dataclass
 from datasets import Dataset, load_dataset
 from pathlib import Path
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.generation.configuration_utils import GenerationConfig
-from typing import Dict, List, Optional, Tuple
+from transformers.utils.quantization_config import BitsAndBytesConfig
+from typing import Dict, List, Optional, Tuple, cast
 from uuid import uuid4
 
 
@@ -94,12 +96,14 @@ class DatasetConfiguration:
     split: str                   # 'train' or 'test'
     text_field: str
     answer_field: str
+    items: Optional[int] = None  # number of question-answer pairs to consider;
+                                 # if None, all items are used
 
 
 @dataclass
 class ExperimentConfiguration:
     tag: str
-    seed: int
+    seed: Optional[int]
     dataset: DatasetConfiguration
     model: ModelConfiguration
     search: SearchConfiguration
@@ -254,10 +258,15 @@ def main() -> None:
     )
     model.eval()
 
-    dataset = load_dataset(
+    dataset = cast(Dataset, load_dataset(
         configuration.dataset.hub_name,
         configuration.dataset.config,
         split=configuration.dataset.split,
+    ))
+    assert isinstance(dataset, Dataset)
+    dataset = dataset.map(
+        lambda _, idx: {'id': idx},
+        with_indices=True,
     )
 
     metrics_rows = []
@@ -267,7 +276,7 @@ def main() -> None:
 
     logger.info('Running experiment')
     correct = 0
-    for item in dataset:
+    for item in itertools.islice(dataset, configuration.dataset.items):
         answer, trace = tot_search(
             prompt=item[configuration.dataset.text_field],
             tokenizer=tokenizer,
