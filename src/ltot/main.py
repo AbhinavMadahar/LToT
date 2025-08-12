@@ -220,6 +220,17 @@ def main() -> None:
     if results_directory:
         (results_directory / 'configuration.yaml').write_text(Path(args.configuration).read_text())
         logger.info('Results will be saved to: %s', results_directory)
+        # Add a file handler to also persist logs to experiment.log
+        log_file = results_directory / 'experiment.log'
+        if not any(getattr(h, 'baseFilename', None) == str(log_file) for h in logger.handlers):
+            file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+            file_handler.setLevel(logging.DEBUG if args.debug else logging.INFO)
+            file_handler.setFormatter(logging.Formatter(
+                '%(asctime)s | %(levelname)-8s | %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S',
+            ))
+            logger.addHandler(file_handler)
+            logger.info('File logging enabled at %s', log_file)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logger.info('Loading model %s on %s...', configuration.model.name_or_path, device)
