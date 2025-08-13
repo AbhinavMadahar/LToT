@@ -3,15 +3,9 @@ WHITE_PAPER_TEX_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-
 WHITE_PAPER_BIB_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.bib'
 WHITE_PAPER_LOG_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.log'
 
-# ------------------------------------------------------------------ #
-# 1  Aggregate target
-# ------------------------------------------------------------------ #
 rule all:
     input: WHITE_PAPER_DESTINATION_FILE_PATH
 
-# ------------------------------------------------------------------ #
-# 2  Build the PDF (XeLaTeX ± Biber)
-# ------------------------------------------------------------------ #
 rule introductory_white_paper:
     output:
         WHITE_PAPER_DESTINATION_FILE_PATH
