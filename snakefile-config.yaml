@@ -1,4 +1,0 @@
-texfiles_to_build:
-  "reports/introductory-overview/LToT: An Introductory Overview (Abhinav Madahar).pdf":
-    tex: "reports/introductory-overview/ltot-an-introductory-overview.tex"
-    bib: "reports/introductory-overview/ltot-an-introductory-overview.bib"
