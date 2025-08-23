@@ -1,23 +1,17 @@
-\documentclass[onecolumn]{IEEEtran}
+\documentclass{article}
+\usepackage{iclr2025_conference,times}
 
+% --- Core packages compatible with pdflatex + natbib ---
 \usepackage{amsmath}
-\usepackage[backend=biber,style=ieee]{biblatex}
-\usepackage{fontspec}
+\usepackage{url}
 \usepackage{hyperref}
 
-\addbibresource{\jobname.bib}
+% Uncomment for camera-ready; keep commented for anonymous review.
+\iclrfinalcopy
 
-\title{Lateral Tree-of-Thoughts (LToT)}
-\date{\today}
+\title{Lateral~Tree-of-Thoughts Surpasses ToT by Incorporating Logically-Consistent, Low-Utility Candidates}
 
-\author{
-    \IEEEauthorblockN{Abhinav Madahar}\\
-    \IEEEauthorblockA{
-        Independent Computer Scientist\\
-        Email: \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}
-    }
-}
-
+\author{Abhinav Madahar \\ Independent Computer Scientist \\ \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}}
 
 \begin{document}
 
@@ -29,39 +23,34 @@
 \section{Introduction}
 \label{section:introduction}
 
-
 \section{Motivation}
 \label{section:motivation}
 
-
-\section{Prior Work}
+\section{Related Work}
 \label{section:prior-work}
-
 
 \section{Architecture Design}
 \label{section:architecture-design}
 
-
 \section{Experiments}
 \label{section:experiments}
-
 
 \section{Results}
 \label{section:results}
 
-
 \section{Future Work}
 \label{section:future-work}
-
-
-\section{Acknowledgements}
-\label{section:acknowledgements}
-
 
 \section{Conclusion}
 \label{section:conclusion}
 
+% Shown only in camera-ready (not in anonymous submissions)
+\ificlrfinal
+\section*{Acknowledgements}
+\fi
 
-\printbibliography
+% ---- BibTeX with natbib (ICLR style) ----
+\bibliographystyle{iclr2025_conference}
+\bibliography{iclr-submission}  % matches paper/iclr-submission.bib
 
 \end{document}

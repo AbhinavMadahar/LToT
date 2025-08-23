@@ -3,7 +3,7 @@ WHITE_PAPER_TEX_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-
 WHITE_PAPER_BIB_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.bib'
 WHITE_PAPER_LOG_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.log'
 
-ICLR_SUBMISSION_DESTINATION_FILE_PATH = 'paper/LToT (Abhinav Madahar).pdf'
+ICLR_SUBMISSION_DESTINATION_FILE_PATH = 'paper/Lateral Tree-of-Thoughts Surpasses ToT by Incorporating Logically-Consistent, Low-Utility Candidates (Abhinav Madahar).pdf'
 ICLR_SUBMISSION_TEX_FILE_PATH = 'paper/iclr-submission.tex'
 ICLR_SUBMISSION_BIB_FILE_PATH = 'paper/iclr-submission.bib'
 ICLR_SUBMISSION_LOG_FILE_PATH = 'paper/iclr-submission.log'
@@ -29,28 +29,32 @@ rule iclr_submission:
         texfile="{input.tex}"
         outdir="$(dirname "$texfile")"
         basename="$(basename "$texfile" .tex)"
-        bcffile="$outdir/$basename.bcf"
+        auxfile="$outdir/$basename.aux"
         pdffile="$outdir/$basename.pdf"
 
-        # --- 1 ⟶ XeLaTeX (1st pass; writes .bcf if biblatex is loaded) ------
-        xelatex -interaction=nonstopmode -halt-on-error \
-                -output-directory="$outdir" "$texfile"    > {log} 2>&1
+        # 1) pdflatex (first pass)
+        pdflatex -interaction=nonstopmode -halt-on-error \
+                 -output-directory="$outdir" "$texfile"  > {log} 2>&1
 
-        # --- 2 ⟶ Biber (ONLY if .bcf exists) -------------------------------
-        if [[ -f "$bcffile" ]]; then
-            biber --input-directory "$outdir" "$basename" >> {log} 2>&1
+        # 2) bibtex (only if .aux exists)
+        if [[ -f "$auxfile" ]]; then
+            (cd "$outdir" && bibtex "$basename") >> {log} 2>&1 || true
         fi
 
-        # --- 3 ⟶ XeLaTeX (2nd pass; resolves citations/refs) ---------------
-        xelatex -interaction=nonstopmode -halt-on-error \
-                -output-directory="$outdir" "$texfile"   >> {log} 2>&1
+        # 3) pdflatex (resolve citations)
+        pdflatex -interaction=nonstopmode -halt-on-error \
+                 -output-directory="$outdir" "$texfile" >> {log} 2>&1
 
-        # --- Move PDF to final name (with spaces/colon/parentheses) ---------
+        # 4) pdflatex (resolve refs)
+        pdflatex -interaction=nonstopmode -halt-on-error \
+                 -output-directory="$outdir" "$texfile" >> {log} 2>&1
+
+        # Move to final destination
         mv -f "$pdffile" "{output}"
 
-        # --- Clean auxiliary files -----------------------------------------
+        # Cleanup
         latexmk -c -silent -output-directory="$outdir" "$texfile"
-        rm -f "$basename.bbl"   # stray file sometimes left at repo root
+        rm -f "$basename.bbl"
         """
 
 
