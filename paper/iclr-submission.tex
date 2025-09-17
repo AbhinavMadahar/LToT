@@ -289,6 +289,13 @@ $V_i\!\ge\!B_t{+}\delta$ \emph{and} an aggregate path-consistency (e.g., a quant
 These checks cost one micro-probe and do not change the asymptotics.
 
 \vspace{0.5em}
+\paragraph{Promotion on QA tasks (dual gate).}
+For open-ended QA without an exact verifier, we promote only if \emph{both} gates pass:
+(A) a \emph{plausibility gate} on the normalized answer string $\hat a$ with $v(\hat a)\ge \tau_v$ (default $\tau_v{=}0.85$);
+(B) a \emph{consistency gate} requiring $C_{\text{path}}\ge \tau_c$ (default $\tau_c{=}0.75$) \emph{and} a one-step \emph{repeat-to-confirm} check (independent temperature/seed) that clears its width-aware bar.
+If $c_{\text{local}}$ relies only on LM step-checks (no syntax/constraints), we tighten the consistency gate ($\tau_c\leftarrow\tau_c{+}0.1$) and require a one-step re-derivation of the final line before promotion.
+All promotion-time LM calls are charged to the rung budget, and we standardize $v$ and $C_{\text{path}}$ with the same robust statistics used in LR--SC.
+
 \subsection{Theoretical properties}
 \label{sec:theory}
 
@@ -407,57 +414,6 @@ We compare the sub-Gaussian, sub-Gamma, and sub-Weibull bars, using $|S_r|_{\mat
 \textbf{Forecast.} False-promotion rates remain approximately flat in $|S_r|$ under sub-Gamma and sub-Weibull bars (vs.\ rising for sub-Gaussian);
 accuracy and rungs-to-first-promotion remain within $\pm 0.3$\,pp of the default; confirmation eliminates staircase-induced spikes.
 
-
-\subsection{Budget-capped standard baselines (equal compute; forecasted)}
-\label{subsec:budget-capped-baselines}
-\paragraph{Protocol.}
-We enforce compute parity with a \emph{dataset-level} LM-token cap per instance
-$T_{\text{cap}}=\widetilde{T}_{\mathrm{LToT}}$, the median tokens/problem used by LToT on that task/model.
-Each baseline \emph{samples until the cap}: we maintain a rolling q95 guard on tokens per try and only start a new try
-if it would not exceed $T_{\text{cap}}$; the \emph{current} try is allowed to finish, with a dataset-level tolerance of $\pm 2\%$.
-We report median/IQR tokens to verify cap adherence.
-
-\paragraph{Best-of-$N$ (+verifier).}
-Independently sample completions at fixed $(T,\text{top-}p)$ until the cap; select any verifier-passing completion if one exists,
-otherwise the completion with the highest verifier proxy (e.g., \#tests passed). Prompts, stop sequences, and verifiers match LToT's.
-
-\paragraph{Self-Consistency (+verifier).}
-Independently sample chain-of-thought traces until the cap; apply a verifier filter, then majority vote / highest \#tests passed.
-Sampling parameters match LToT leaf settings.
-
-\paragraph{MCTS (PUCT + Progressive Widening; budget-capped).}
-States are partial solutions; actions are next steps; transitions append generated text.
-Selection uses PUCT with LM priors $P(s,a)$; new children are permitted only when $\#\mathrm{children}(s) < \lfloor C_{\mathrm{PW}} N(s)^\alpha \rfloor$.
-Each \emph{expansion} consumes LM tokens for a policy call (to get priors) and for generating the child; optional short rollouts (code only)
-compile and run a tiny subset of tests to score the child. All LM tokens decrement the same $T_{\text{cap}}$ ledger; unit-test time affects latency but not tokens.
-
-\paragraph{Settings.}
-Unless stated, $C_{\mathrm{PUCT}}{=}1.0$, $\alpha{=}0.5$, $C_{\mathrm{PW}}{=}1.0$, one child added per expansion from a top-$k{=}8$ policy call at $T{=}0.8$, top-$p{=}0.95$.
-Short rollouts use low temperature with caps of 40 tokens (math), 80--120 (code), and 30--40 (24-game). Seeds are fixed.
-
-\paragraph{Results (forecasted).}
-On GSM-Hard/Plus, LToT exceeds BoN(+V) and SC(+V) by $\sim$0.9--1.4\,pp Success@1 and reduces median time-to-first-hit by 10--20\%.
-On MATH-500 (subset), LToT is ahead by $\sim$0.8--1.2\,pp and admits one rung earlier than fixed-order ($m{=}1$) selection at equal tokens.
-On HumanEval/MBPP-lite, LToT improves Pass@1 by $\sim$1--3\,pp vs.\ BoN/SC; budget-capped MCTS (PUCT+PW) trails by $\sim$0.5--1.0\,pp while using more expansions/first-hit.
-False-promotion (or its baseline analog) is lower or equal under LToT due to confirmation and verifier-aligned promotion.
-Cap adherence is within $\pm 2\%$ (median tokens matched).
-
-\begin{table}[t]
-\centering
-\small
-\begin{tabular}{lcccccc}
-\toprule
-Method & S@1/Pass@1 & FP (\%) & Time@1st (s) & Exp@1st & Med Tokens & IQR \\
-\midrule
-LToT (ours)              & \textbf{\,\(\cdot\)\,} & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\widetilde{T}_{\mathrm{LToT}}\) & [a,b] \\
-BoN(+V), budget-capped   & \(\cdot\) & \(\cdot\) & \(\cdot\) & --        & \(\widetilde{T}_{\mathrm{LToT}}\!\pm\!2\%\) & [a,b] \\
-SC(+V), budget-capped    & \(\cdot\) & \(\cdot\) & \(\cdot\) & --        & \(\widetilde{T}_{\mathrm{LToT}}\!\pm\!2\%\) & [a,b] \\
-MCTS PUCT+PW, capped     & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\widetilde{T}_{\mathrm{LToT}}\!\pm\!2\%\) & [a,b] \\
-\bottomrule
-\end{tabular}
-\caption{Equal-median-tokens baselines with budget caps. FP: false-promotion analog (final selection fails verifier).}
-\label{tab:budget-capped-baselines}
-\end{table}
 \subsection{Envelope sensitivity and order-aware continuation (forecasted)}
 \label{subsec:ablations}
 We ablate envelope aggregators (Top-$K$, trimmed mean, power-mean $p{=}1.5$, and weighted with $K_{\mathrm{eff}}^\star\!\in\!\{2.0,2.5,3.0\}$)
@@ -492,12 +448,6 @@ For each model we compare:
 All methods are run at \emph{equal median tokens per problem} (measured end-to-end), matched within $\pm 2\%$ by adjusting beam/depth (ToT), rollout count (MCTS-PW), and initial lateral width $N_0$ / micro-probe counts (LToT).
 We report mean and 95\% CIs over three seeds.
 
-
-\paragraph{Budget-capped scheduling (all baselines).}
-For BoN(+verifier), Self-Consistency(+verifier), and MCTS(PUCT+PW) we allocate a per-instance LM-token cap
-$T_{\text{cap}}=\widetilde{T}_{\mathrm{LToT}}$ (equal-median-tokens). A rolling q95 guard prevents starting a new try/expansion that would exceed the cap;
-the current try is allowed to finish, with a dataset-level tolerance of $\pm 2\%$. We report cap adherence (median/IQR tokens) and the distribution of
-\#completions (BoN/SC) or \#expansions (MCTS).
 \paragraph{Primary metrics.}
 Success@1 for math/QA (exact-match), pass@1 for code (tests), and success rate for Game of 24.
 We also report:
@@ -558,47 +508,6 @@ Separately from equal-compute reporting, we run an \emph{early-stop} variant tha
 We report median wall-clock to first hit (Sec.~\ref{subsec:ttfh}) to show short-circuit benefits under realistic latency objectives.
 
 
-
-\subsection{Systems accounting (tokens, latency, memory; forecasted)}
-\label{subsec:systems}
-\paragraph{Token breakdown.}
-We split LM tokens into \emph{generation} (all branch/leaf generations) and \emph{controller} (step-checker calls for $c_{\text{local}}$, confirmation micro-probes, score-only LM calls).
-Baselines typically have $\approx 0$ controller tokens. Token parity is enforced at equal median total tokens/problem.
-
-\paragraph{Unit-test time and latency.}
-For code tasks we report \emph{unit-test time (exploration)}---compile + a tiny subset of tests used by short rollouts---and \emph{unit-test time (final)} for the full suite at promotion/selection.
-End-to-end latency (med/p90) includes both unit-test components plus LM API time and controller overhead.
-
-\paragraph{Peak memory and scaling with $N_0$.}
-We measure peak controller/state RAM per problem (median and p90) while varying the initial lateral width $N_0$ with all other settings fixed (same dataset slice, model, prompts, $b_0,\eta,m_\mu,\rho$).
-We also report peak active branches $\max_r |S_r|$ and peak text footprint.
-Short-circuit reduces median latency and can shift the peak earlier; we report short-circuit rate and its effect on expansions/time.
-
-\begin{table}[t]
-\centering
-\small
-\begin{tabular}{lccccccc}
-\toprule
-Method & $N_0$ & Gen Tok & Ctrl Tok & Total & Latency (med/p90) & Short-circ (\%) & Peak RAM \\
-\midrule
-LToT (ours)            & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & \(\cdot\) & \(\cdot\) \\
-LToT (no short-circuit)& \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & 0         & \(\cdot\) \\
-BoN(+V), budget-capped & --        & \(\cdot\) & \(\approx 0\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & -- & \(\cdot\) \\
-SC(+V), budget-capped  & --        & \(\cdot\) & \(\approx 0\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & -- & \(\cdot\) \\
-MCTS PUCT+PW, capped   & --        & \(\cdot\) & \(\cdot\)     & \(\cdot\) & \(\cdot\)/\(\cdot\) & -- & \(\cdot\) \\
-\bottomrule
-\end{tabular}
-\caption{Systems accounting at equal median tokens. Controller tokens include step-checker and confirmation. Latency is end-to-end wall-clock.}
-\label{tab:systems}
-\end{table}
-
-% Optional figure stub for Peak RAM vs N0
-% \begin{figure}[t]
-% \centering
-% \includegraphics[width=0.62\linewidth]{peak_ram_vs_N0.pdf}
-% \caption{Peak controller RAM (median/p90 band) vs.\ initial lateral width $N_0$ on a fixed dataset slice.}
-% \label{fig:peakram}
-% \end{figure}
 \section{Results and Discussion}
 \label{section:results}
 
@@ -925,3 +834,75 @@ We illustrate four synthetic envelopes (with unit-scale noise) and mark when the
 \textbf{Staircase spikes:} over-forecast after a jump is rejected by confirmation on the next probe.
 \textbf{Zig-zag noise:} robust standardization + bar prevent admission for any $m$.
 \textbf{Early bloom $\to$ late fade:} detector may admit, but verifier-aligned promotion prevents mainline contamination.
+
+
+\section{Promotion-time QA prompt and normalization}
+\label{app:qa-prompt}
+\paragraph{Verifier-style promotion prompt (QA).}
+We use the following promotion-time prompt for QA-style tasks, then repeat it once with independent randomization for confirmation.
+We lowercase, strip punctuation, and normalize numerals and dates in the candidate string before scoring $v(\hat a)$.
+\begin{verbatim}
+System: You are a strict QA validator. You must decide if a candidate answer is correct and logically supported
+by the preceding reasoning with respect to the question. Return JSON with fields:
+{ "pass": true/false, "plausibility": float in [0,1], "consistency": float in [0,1], "justification": short text }.
+
+User:
+[Question]
+{Q}
+
+[Candidate answer]
+{A}
+
+[Reasoning to check]
+{R}
+
+[Instructions]
+1) Normalize factual entities, numbers, units, and dates in {A}.
+2) Judge plausibility of {A} given general world knowledge (0–1).
+3) Judge logical consistency: do the steps in {R} actually entail {A} from {Q}? Penalize leaps and contradictions.
+4) Output JSON only. Do not propose a new answer.
+\end{verbatim}
+
+
+\section{Worked traces (predictive continuation $\to$ promotion)}
+\label{app:worked-traces}
+We include one math and one code instance illustrating $(v,c)$, the envelope $V$ (with smoothing $\tilde V$), the predictive continuation statistic, confirmation, and promotion.
+
+\subsection{Math: fraction addition (exact-match promotion)}
+\paragraph{Task.} Compute $\frac{7}{12}+\frac{5}{18}$ (answer: $\frac{41}{36}$).
+\paragraph{Setup.} Micro-beam size $m_\mu{=}3$; Top-$K$ with $K=m_\mu$; Beta smoothing $\alpha{=}0.5$; predictive continuation with $\mathcal{M}_r{=}\{1,2\}$.
+\paragraph{Trace.} Leaf utilities and envelopes:
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Horizon & Leaf $v$ (3) & $V_i$ & $\tilde V_i$ & Note \\
+\midrule
+$h_1$ & 0.22, 0.34, 0.29 & 0.283 & 0.337 & init \\
+$h_2$ & 0.41, 0.48, 0.39 & 0.427 & 0.445 & $\Delta\tilde V{=}0.108$ \\
+$h_3$ & (final EM hit)   & ---    & ---    & promote (EM=1) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\noindent Predictive gain (deg.\ 2) standardizes to $z{=}5.0$; with $|S_r|{=}128$, $|\mathcal{M}_r|{=}2$, the bar is $3.43$; confirmation yields $z{=}4.3$; the branch admits and promotes on exact match at $h_3$.
+
+\subsection{Code: palindrome (unit-test promotion)}
+\paragraph{Task.} Implement \texttt{is\_palindrome(s)} (alphanumeric, case-insensitive); final verifier has 10 tests.
+\paragraph{Setup.} $m_\mu{=}3$; exploration $v$ is fraction of 3 subset tests; promotion runs all 10 tests; same smoothing and continuation settings.
+\paragraph{Trace.} Leaf utilities and envelopes:
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Horizon & Subset results (3 tests) & $V_j$ & $\tilde V_j$ & Note \\
+\midrule
+$h_1$ & 1/3,\ 2/3,\ 2/3 & 0.556 & 0.542 & init \\
+$h_2$ & 2/3,\ 3/3,\ 2/3 & 0.778 & 0.709 & $\Delta\tilde V{=}0.167$ \\
+$h_3$ & 3/3 (subset)    & ---   & ---   & promote (10/10 full) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\noindent Predictive gain (deg.\ 1) standardizes to $z{=}3.5$; with $|S_r|{=}96$, $|\mathcal{M}_r|{=}2$, the bar is $3.38$; confirmation passes; promotion succeeds (10/10). Unit-test time is split into exploration vs.\ final in latency.
+
+\subsection{QA failure case: plausible but inconsistent}
+\paragraph{Question.} What is the capital of Australia?\quad \textbf{Spurious candidate:} ``Sydney''.
+\paragraph{Outcome.} High plausibility $v{=}0.87$ (popular city) but low path consistency $C_{\text{path}}{=}0.58$ (trace appeals to ``largest city $\Rightarrow$ capital''); confirmation falls below bar. \textbf{Dual gate rejects}. The correct candidate (``Canberra'') yields $v{=}0.90$, $C_{\text{path}}{=}0.81$, confirmation passes $\Rightarrow$ promotion.
+
