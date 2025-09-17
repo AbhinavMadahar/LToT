@@ -407,6 +407,57 @@ We compare the sub-Gaussian, sub-Gamma, and sub-Weibull bars, using $|S_r|_{\mat
 \textbf{Forecast.} False-promotion rates remain approximately flat in $|S_r|$ under sub-Gamma and sub-Weibull bars (vs.\ rising for sub-Gaussian);
 accuracy and rungs-to-first-promotion remain within $\pm 0.3$\,pp of the default; confirmation eliminates staircase-induced spikes.
 
+
+\subsection{Budget-capped standard baselines (equal compute; forecasted)}
+\label{subsec:budget-capped-baselines}
+\paragraph{Protocol.}
+We enforce compute parity with a \emph{dataset-level} LM-token cap per instance
+$T_{\text{cap}}=\widetilde{T}_{\mathrm{LToT}}$, the median tokens/problem used by LToT on that task/model.
+Each baseline \emph{samples until the cap}: we maintain a rolling q95 guard on tokens per try and only start a new try
+if it would not exceed $T_{\text{cap}}$; the \emph{current} try is allowed to finish, with a dataset-level tolerance of $\pm 2\%$.
+We report median/IQR tokens to verify cap adherence.
+
+\paragraph{Best-of-$N$ (+verifier).}
+Independently sample completions at fixed $(T,\text{top-}p)$ until the cap; select any verifier-passing completion if one exists,
+otherwise the completion with the highest verifier proxy (e.g., \#tests passed). Prompts, stop sequences, and verifiers match LToT's.
+
+\paragraph{Self-Consistency (+verifier).}
+Independently sample chain-of-thought traces until the cap; apply a verifier filter, then majority vote / highest \#tests passed.
+Sampling parameters match LToT leaf settings.
+
+\paragraph{MCTS (PUCT + Progressive Widening; budget-capped).}
+States are partial solutions; actions are next steps; transitions append generated text.
+Selection uses PUCT with LM priors $P(s,a)$; new children are permitted only when $\#\mathrm{children}(s) < \lfloor C_{\mathrm{PW}} N(s)^\alpha \rfloor$.
+Each \emph{expansion} consumes LM tokens for a policy call (to get priors) and for generating the child; optional short rollouts (code only)
+compile and run a tiny subset of tests to score the child. All LM tokens decrement the same $T_{\text{cap}}$ ledger; unit-test time affects latency but not tokens.
+
+\paragraph{Settings.}
+Unless stated, $C_{\mathrm{PUCT}}{=}1.0$, $\alpha{=}0.5$, $C_{\mathrm{PW}}{=}1.0$, one child added per expansion from a top-$k{=}8$ policy call at $T{=}0.8$, top-$p{=}0.95$.
+Short rollouts use low temperature with caps of 40 tokens (math), 80--120 (code), and 30--40 (24-game). Seeds are fixed.
+
+\paragraph{Results (forecasted).}
+On GSM-Hard/Plus, LToT exceeds BoN(+V) and SC(+V) by $\sim$0.9--1.4\,pp Success@1 and reduces median time-to-first-hit by 10--20\%.
+On MATH-500 (subset), LToT is ahead by $\sim$0.8--1.2\,pp and admits one rung earlier than fixed-order ($m{=}1$) selection at equal tokens.
+On HumanEval/MBPP-lite, LToT improves Pass@1 by $\sim$1--3\,pp vs.\ BoN/SC; budget-capped MCTS (PUCT+PW) trails by $\sim$0.5--1.0\,pp while using more expansions/first-hit.
+False-promotion (or its baseline analog) is lower or equal under LToT due to confirmation and verifier-aligned promotion.
+Cap adherence is within $\pm 2\%$ (median tokens matched).
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lcccccc}
+\toprule
+Method & S@1/Pass@1 & FP (\%) & Time@1st (s) & Exp@1st & Med Tokens & IQR \\
+\midrule
+LToT (ours)              & \textbf{\,\(\cdot\)\,} & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\widetilde{T}_{\mathrm{LToT}}\) & [a,b] \\
+BoN(+V), budget-capped   & \(\cdot\) & \(\cdot\) & \(\cdot\) & --        & \(\widetilde{T}_{\mathrm{LToT}}\!\pm\!2\%\) & [a,b] \\
+SC(+V), budget-capped    & \(\cdot\) & \(\cdot\) & \(\cdot\) & --        & \(\widetilde{T}_{\mathrm{LToT}}\!\pm\!2\%\) & [a,b] \\
+MCTS PUCT+PW, capped     & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\widetilde{T}_{\mathrm{LToT}}\!\pm\!2\%\) & [a,b] \\
+\bottomrule
+\end{tabular}
+\caption{Equal-median-tokens baselines with budget caps. FP: false-promotion analog (final selection fails verifier).}
+\label{tab:budget-capped-baselines}
+\end{table}
 \subsection{Envelope sensitivity and order-aware continuation (forecasted)}
 \label{subsec:ablations}
 We ablate envelope aggregators (Top-$K$, trimmed mean, power-mean $p{=}1.5$, and weighted with $K_{\mathrm{eff}}^\star\!\in\!\{2.0,2.5,3.0\}$)
@@ -441,6 +492,12 @@ For each model we compare:
 All methods are run at \emph{equal median tokens per problem} (measured end-to-end), matched within $\pm 2\%$ by adjusting beam/depth (ToT), rollout count (MCTS-PW), and initial lateral width $N_0$ / micro-probe counts (LToT).
 We report mean and 95\% CIs over three seeds.
 
+
+\paragraph{Budget-capped scheduling (all baselines).}
+For BoN(+verifier), Self-Consistency(+verifier), and MCTS(PUCT+PW) we allocate a per-instance LM-token cap
+$T_{\text{cap}}=\widetilde{T}_{\mathrm{LToT}}$ (equal-median-tokens). A rolling q95 guard prevents starting a new try/expansion that would exceed the cap;
+the current try is allowed to finish, with a dataset-level tolerance of $\pm 2\%$. We report cap adherence (median/IQR tokens) and the distribution of
+\#completions (BoN/SC) or \#expansions (MCTS).
 \paragraph{Primary metrics.}
 Success@1 for math/QA (exact-match), pass@1 for code (tests), and success rate for Game of 24.
 We also report:
@@ -501,6 +558,47 @@ Separately from equal-compute reporting, we run an \emph{early-stop} variant tha
 We report median wall-clock to first hit (Sec.~\ref{subsec:ttfh}) to show short-circuit benefits under realistic latency objectives.
 
 
+
+\subsection{Systems accounting (tokens, latency, memory; forecasted)}
+\label{subsec:systems}
+\paragraph{Token breakdown.}
+We split LM tokens into \emph{generation} (all branch/leaf generations) and \emph{controller} (step-checker calls for $c_{\text{local}}$, confirmation micro-probes, score-only LM calls).
+Baselines typically have $\approx 0$ controller tokens. Token parity is enforced at equal median total tokens/problem.
+
+\paragraph{Unit-test time and latency.}
+For code tasks we report \emph{unit-test time (exploration)}---compile + a tiny subset of tests used by short rollouts---and \emph{unit-test time (final)} for the full suite at promotion/selection.
+End-to-end latency (med/p90) includes both unit-test components plus LM API time and controller overhead.
+
+\paragraph{Peak memory and scaling with $N_0$.}
+We measure peak controller/state RAM per problem (median and p90) while varying the initial lateral width $N_0$ with all other settings fixed (same dataset slice, model, prompts, $b_0,\eta,m_\mu,\rho$).
+We also report peak active branches $\max_r |S_r|$ and peak text footprint.
+Short-circuit reduces median latency and can shift the peak earlier; we report short-circuit rate and its effect on expansions/time.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{lccccccc}
+\toprule
+Method & $N_0$ & Gen Tok & Ctrl Tok & Total & Latency (med/p90) & Short-circ (\%) & Peak RAM \\
+\midrule
+LToT (ours)            & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & \(\cdot\) & \(\cdot\) \\
+LToT (no short-circuit)& \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & 0         & \(\cdot\) \\
+BoN(+V), budget-capped & --        & \(\cdot\) & \(\approx 0\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & -- & \(\cdot\) \\
+SC(+V), budget-capped  & --        & \(\cdot\) & \(\approx 0\) & \(\cdot\) & \(\cdot\)/\(\cdot\) & -- & \(\cdot\) \\
+MCTS PUCT+PW, capped   & --        & \(\cdot\) & \(\cdot\)     & \(\cdot\) & \(\cdot\)/\(\cdot\) & -- & \(\cdot\) \\
+\bottomrule
+\end{tabular}
+\caption{Systems accounting at equal median tokens. Controller tokens include step-checker and confirmation. Latency is end-to-end wall-clock.}
+\label{tab:systems}
+\end{table}
+
+% Optional figure stub for Peak RAM vs N0
+% \begin{figure}[t]
+% \centering
+% \includegraphics[width=0.62\linewidth]{peak_ram_vs_N0.pdf}
+% \caption{Peak controller RAM (median/p90 band) vs.\ initial lateral width $N_0$ on a fixed dataset slice.}
+% \label{fig:peakram}
+% \end{figure}
 \section{Results and Discussion}
 \label{section:results}
 
