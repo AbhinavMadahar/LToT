@@ -677,10 +677,6 @@ The empirical picture matches the theoretical intent of LToT:
 (iv) \emph{promoting only on outcome}, maintaining low false promotion rates.
 Together these results support LToT as a principled controller that makes large inference budgets effective on reasoning tasks.
 
-\section{Future Work}
-\label{section:future-work}
-
-
 \subsection{Frontier evaluator: robustness under noisy $v$}
 \label{subsec:frontier-results-noisy}
 
@@ -799,6 +795,17 @@ We mitigate this by binding promotion to verifier alignment and by reporting fal
 
 \paragraph{Synthesis.}
 Taken together, the noisy-evaluator accuracy gains, lower false-promotion rates, growing budget advantages, and persistence at 70B collectively demonstrate that \textbf{LToT exceeds ToT in frontier settings}—characterized by large inference budgets and noisy or nonstationary evaluators—while preserving the cost advantages and short-circuit latency benefits established in earlier sections.
+
+
+\section{Future Work}
+\label{section:future-work}
+
+\subsection{Specious lateral cascades: two-stage selection under multiplicity}
+\label{subsec:specious-cascades}
+
+A natural next step is a principled analysis of \emph{specious lateral cascades}: branches admitted by an early false positive at the consistency gate (\(c\)) whose envelope \(V\) later rises enough to trigger consideration for promotion, where the promotion-time check also issues a false positive. In our controller, this is a two-stage selection error aligned with LR--SC’s width-aware thresholds and short-circuiting (Sec.~\ref{sec:lrscr}) and the verifier-aligned promotion gate (Sec.~\ref{sec:promotion}). We will formalize the event structure (Type-C-FP at lateral admission; Type-P-FP at promotion), derive multiplicity-aware bounds on the family-wise cascade probability across rungs under sub-Gaussian improvements and width-aware bars (Sec.~\ref{sec:theory}), and instrument benchmarks with ground-truthable oracles to estimate (i) specious-promotion rate, (ii) cascade depth, and (iii) compute share spent on ultimately inconsistent branches.
+
+We will also evaluate drop-in mitigations that preserve the pseudolinear lateral cost: (i) holdout confirmations at promotion time (one micro-probe) to reduce selective-inference bias; (ii) path-consistency aggregation (e.g., quantile-of-\(c\) along the path) at promotion; and (iii) disjoint verifier prompts or cross-model checks for repeat-to-confirm under fixed micro-budgets. Sensitivity studies will sweep initial lateral width, overflow cap, confirmation budgets, and threshold margins to map robustness frontiers and accuracy–latency Pareto curves. The goal is a statistically disciplined account of when laterals with spurious early \(c\) signals can be nurtured by envelope dynamics—and how to bound such cascades without sacrificing the wide-and-short advantages established here.
 
 
 \section{Conclusion}
