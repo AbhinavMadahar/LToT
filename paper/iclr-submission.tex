@@ -813,8 +813,6 @@ Taken together, the noisy-evaluator accuracy gains, lower false-promotion rates,
 \bibliographystyle{iclr2025_conference}
 \bibliography{iclr-submission}  % matches paper/iclr-submission.bib
 
-\end{document}
-
 \appendix
 
 \section{Robust evaluator and width-aware bars}\label{app:robust-eval}
@@ -906,3 +904,4 @@ $h_3$ & 3/3 (subset)    & ---   & ---   & promote (10/10 full) \\
 \paragraph{Question.} What is the capital of Australia?\quad \textbf{Spurious candidate:} ``Sydney''.
 \paragraph{Outcome.} High plausibility $v{=}0.87$ (popular city) but low path consistency $C_{\text{path}}{=}0.58$ (trace appeals to ``largest city $\Rightarrow$ capital''); confirmation falls below bar. \textbf{Dual gate rejects}. The correct candidate (``Canberra'') yields $v{=}0.90$, $C_{\text{path}}{=}0.81$, confirmation passes $\Rightarrow$ promotion.
 
+\end{document}
