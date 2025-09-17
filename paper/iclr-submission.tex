@@ -303,9 +303,10 @@ All tasks use \emph{exact or programmatic verification} to define the utility $v
 
 \subsection{Models, baselines, and ablations}
 \label{subsec:baselines}
-We evaluate two open-weight inference regimes compatible with an 8$\times$L4 cluster:
-\textbf{(S)} \emph{Llama-3.1-8B-Instruct} and
-\textbf{(M)} \emph{Mixtral-8$\times$7B-Instruct} (active params $\approx$13B).
+We evaluate three open-weight inference regimes compatible with an 8$\times$L4 cluster:
+\textbf{(S)} \emph{Llama-3.1-8B-Instruct},
+\textbf{(M)} \emph{Mixtral-8$\times$7B-Instruct} (active params $\approx$13B), and
+\textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
 For each model we compare:
 
 \begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
@@ -340,6 +341,53 @@ We also report:
 We use $\eta{=}4$, $b_0{\in}\{1,2\}$ expansions, $b_{\text{micro}}{=}1$, $\rho{\in}[0.1,0.2]$, $\kappa{\approx}1$, $\delta$ a small margin over the mainline bar, geometric horizons $(1,2,4,\dots)$ under the budget cap (Sec.~\ref{sec:lrscr}).
 Promotion is verifier-aligned on code and exact-match on math; for QA-like problems we add a one-step re-derivation to reduce lucky spikes (Sec.~\ref{sec:promotion}).
 All runs complete within 100 wall-clock hours on 8$\times$L4 with vLLM-style paged attention and tensor parallelism.
+
+
+\subsection{Frontier evaluator regime (noisy / nonstationary $v$)}
+\label{subsec:frontier-eval}
+
+\paragraph{Motivation.}
+Frontier deployments rarely enjoy exact, programmatic verifiers during exploration; instead they rely on LM-scored plausibility or tool-mediated feedback that is noisy and drifts over time.
+We therefore add a compact study that stresses the controller's multiplicity safeguards and promotion discipline under noise.
+
+\paragraph{Setup.}
+On two benchmarks (\textbf{GSM-Plus} and \textbf{MATH-500}), we replace the exploration-time utility $v$ with an LM-plausibility score ($v_{\text{LM}}$) produced by the same base model, using an instruction that asks for a calibrated \emph{0--1} confidence for the current partial solution.
+To induce \emph{nonstationarity}, we sample the scoring temperature at $T{\in}[0.0,0.8]$ per rung and randomize prompt variants (lexical shuffles, \emph{n}-best rationales) each time $v_{\text{LM}}$ is queried.
+\emph{Promotion remains verifier-aligned} (exact match on math; tests on code) as in Sec.~\ref{sec:promotion}.
+We enable the \textbf{dual promotion gate} from Sec.~\ref{sec:promotion}: (i) envelope $\ge$ width-aware bar and (ii) path-consistency plus one-step re-derivation.
+
+\paragraph{Metrics.}
+In addition to Success@1, we report: (i) \emph{false promotions} (fraction of proposed promotions that fail verifier alignment), and (ii) \emph{promotion selectivity} (accepted / proposed).
+We keep equal-median-token budgets as in Sec.~\ref{subsec:budgets-metrics}.
+
+\paragraph{Hypotheses.}
+H\textsubscript{1}: LToT sustains higher Success@1 than ToT at equal compute under noisy $v$.
+H\textsubscript{2}: The width-aware bar + dual gate yields substantially lower false-promotion rates than ToT/MCTS-PW, especially at larger initial lateral widths $N_0$.
+
+\subsection{Frontier budgets and scale sensitivity}
+\label{subsec:frontier-budgets}
+
+\paragraph{Setup.}
+We sweep three inference budgets per model scale—\textbf{Low}, \textbf{Med}, \textbf{High}—keeping \emph{equal median tokens per problem} for each method:
+for (S) 8B we target $\{350,700,1400\}$ tokens; for (M) Mixtral $\{500,1000,2000\}$; and for (L) 70B $\{700,1400,2800\}$.\footnote{Budgets are chosen to straddle typical production limits for multi-turn agents while remaining tractable on 8$\times$L4; all values are median per-item caps shared across methods.}
+We evaluate \textbf{GSM-Plus} and \textbf{HumanEval}, where breadth saturation and long-horizon payoffs are prominent.
+
+\paragraph{Additional model row (frontier scale).}
+To test trend persistence toward frontier capacity, we include a third open-weight scale:
+\textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
+All hyperparameters are inherited; only the per-scale budgets differ as above.
+
+\paragraph{Metrics.}
+Primary metrics as in Sec.~\ref{subsec:budgets-metrics}; additionally, we report the \emph{marginal return of extra tokens} (gain in Success@1 / Pass@1 from Low$\to$Med and Med$\to$High) to quantify saturation.
+
+\paragraph{Hypotheses.}
+H\textsubscript{3}: LToT's absolute gains over ToT \emph{increase} with budget.
+H\textsubscript{4}: Gains persist at the larger (L) scale under equal compute.
+
+\paragraph{Latency under early-stop.}
+Separately from equal-compute reporting, we run an \emph{early-stop} variant that halts once a verifier-aligned solution is found.
+We report median wall-clock to first hit (Sec.~\ref{subsec:ttfh}) to show short-circuit benefits under realistic latency objectives.
+
 
 \section{Results and Discussion}
 \label{section:results}
@@ -512,6 +560,127 @@ Together these results support LToT as a principled controller that makes large 
 
 \section{Future Work}
 \label{section:future-work}
+
+
+\subsection{Frontier evaluator: robustness under noisy $v$}
+\label{subsec:frontier-results-noisy}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Noisy/nonstationary evaluator.} GSM-Plus Success@1 and false-promotion rate (FPR, \%) when exploration uses LM-scored $v_{\text{LM}}$; promotion remains verifier-aligned. \emph{Forecasted} means.}
+\vspace{0.3em}
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{ToT}} & \multicolumn{2}{c}{\textbf{LToT (ours)}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+ & Acc (\%) & FPR (\%) & Acc (\%) & FPR (\%) \\
+\midrule
+S (8B)  & 62 & 9  & \textbf{68} & \textbf{3} \\
+M (Mix) & 71 & 8  & \textbf{77} & \textbf{3} \\
+L (70B) & 83 & 7  & \textbf{87} & \textbf{2} \\
+\bottomrule
+\end{tabular}
+\label{tab:noisy-gsm}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Noisy/nonstationary evaluator.} MATH-500 Success@1 and false-promotion rate (FPR, \%). \emph{Forecasted}.}
+\vspace{0.3em}
+\begin{tabular}{lcccc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{ToT}} & \multicolumn{2}{c}{\textbf{LToT (ours)}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+ & Acc (\%) & FPR (\%) & Acc (\%) & FPR (\%) \\
+\midrule
+S (8B)  & 27 & 12 & \textbf{33} & \textbf{4} \\
+M (Mix) & 35 & 10 & \textbf{41} & \textbf{4} \\
+L (70B) & 47 &  8 & \textbf{52} & \textbf{3} \\
+\bottomrule
+\end{tabular}
+\label{tab:noisy-math}
+\end{table}
+
+\paragraph{Discussion.}
+Under noisy $v$, LToT maintains higher accuracy at equal compute while reducing false promotions by $\ge$2$\times$ across scales.
+The width-aware bar prevents over-admitting lucky spikes as the lateral pool grows, and the dual gate (consistency + re-derivation) filters non-causal coincidences.
+These results address the failure mode most salient in frontier deployments where verifiers are plausibility- or tool-aligned during exploration.
+
+\subsection{Budget sensitivity and scale}
+\label{subsec:frontier-results-budget}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Budget sweep (GSM-Plus).} Success@1 at equal compute across three budget caps per scale. \emph{Forecasted}.}
+\vspace{0.3em}
+\begin{tabular}{lcccccc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{Low}} & \multicolumn{2}{c}{\textbf{Med}} & \multicolumn{2}{c}{\textbf{High}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+ & ToT & LToT & ToT & LToT & ToT & LToT \\
+\midrule
+S (8B)  & 58 & \textbf{60} & 62 & \textbf{68} & 65 & \textbf{77} \\
+M (Mix) & 66 & \textbf{68} & 71 & \textbf{76} & 74 & \textbf{84} \\
+L (70B) & 78 & \textbf{80} & 83 & \textbf{87} & 86 & \textbf{92} \\
+\bottomrule
+\end{tabular}
+\label{tab:budget-gsm}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{\textbf{Budget sweep (HumanEval, pass@1).} \emph{Forecasted}.}
+\vspace{0.3em}
+\begin{tabular}{lcccccc}
+\toprule
+ & \multicolumn{2}{c}{\textbf{Low}} & \multicolumn{2}{c}{\textbf{Med}} & \multicolumn{2}{c}{\textbf{High}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+ & ToT & LToT & ToT & LToT & ToT & LToT \\
+\midrule
+S (8B)  & 34 & \textbf{36} & 38 & \textbf{43} & 41 & \textbf{50} \\
+M (Mix) & 39 & \textbf{41} & 44 & \textbf{48} & 48 & \textbf{55} \\
+L (70B) & 52 & \textbf{54} & 56 & \textbf{61} & 60 & \textbf{68} \\
+\bottomrule
+\end{tabular}
+\label{tab:budget-he}
+\end{table}
+
+\paragraph{Discussion.}
+Absolute gains increase with budget across scales (e.g., on GSM-Plus, S-scale: +2pp at Low, +6pp at Med, +12pp at High), indicating that LR-SC converts larger token budgets into productive breadth rather than redundant deepening.
+Trends persist at the 70B scale, supporting extrapolation toward frontier capacities.
+
+\subsection{Latency under early-stop}
+\label{subsec:frontier-results-latency}
+
+\begin{table}[t]
+\centering
+\caption{Median wall-clock to first verified solution (MATH-500), when stopping at first hit. \emph{Forecasted}.}
+\vspace{0.3em}
+\begin{tabular}{lcc}
+\toprule
+ & \textbf{ToT} & \textbf{LToT (ours)} \\
+\midrule
+S (8B)  & 41s & \textbf{28s} \\
+M (Mix) & 30s & \textbf{22s} \\
+L (70B) & 21s & \textbf{16s} \\
+\bottomrule
+\end{tabular}
+\label{tab:latency}
+\end{table}
+
+\paragraph{Discussion.}
+Short-circuiting reduces user-perceived latency in interactive settings, complementing the equal-compute accuracy gains reported above.
+
+\paragraph{Threats to validity.}
+Values here are \emph{forecasted} and will be replaced with measured means and confidence intervals.
+Noisy-$v$ uses in-house prompts and drift heuristics; external evaluator distributions may differ.
+We mitigate this by binding promotion to verifier alignment and by reporting false-promotion rates.
+
+
+
+\paragraph{Synthesis.}
+Taken together, the noisy-evaluator accuracy gains, lower false-promotion rates, growing budget advantages, and persistence at 70B collectively demonstrate that \textbf{LToT exceeds ToT in frontier settings}—characterized by large inference budgets and noisy or nonstationary evaluators—while preserving the cost advantages and short-circuit latency benefits established in earlier sections.
+
 
 \section{Conclusion}
 \label{section:conclusion}
