@@ -1,8 +1,255 @@
-\begin{thebibliography}{0}
+\begin{thebibliography}{29}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Besta et~al.(2024)Besta, Blach, Kubicek, Gerstenberger, Podstawski,
+  Gianinazzi, Gajda, Lehmann, Niewiadomski, Nyczyk, and Hoefler]{besta2024got}
+Maciej Besta, Nils Blach, Ales Kubicek, Robert Gerstenberger, Michal
+  Podstawski, Lukas Gianinazzi, Joanna Gajda, Tomasz Lehmann, Hubert
+  Niewiadomski, Piotr Nyczyk, and Torsten Hoefler.
+\newblock Graph of thoughts: Solving elaborate problems with large language
+  models.
+\newblock In \emph{Proceedings of the AAAI Conference on Artificial
+  Intelligence}, 2024.
+\newblock \doi{10.1609/aaai.v38i16.29720}.
+\newblock URL \url{https://arxiv.org/abs/2308.09687}.
+
+\bibitem[Bi et~al.(2024)]{bi2024fot}
+Zijun Bi et~al.
+\newblock Forest-of-thought: Scaling test-time compute with multiple reasoning
+  trees.
+\newblock 2024.
+\newblock URL \url{https://arxiv.org/abs/2412.09078}.
+
+\bibitem[Brown et~al.(2024--2025)Brown, Juravsky, Ehrlich, Clark, Le, R{\'e},
+  and Mirhoseini]{brown2024monkeys}
+Bradley Brown, Jordan Juravsky, Ryan~Saul Ehrlich, Ronald Clark, Quoc~V. Le,
+  Christopher R{\'e}, and Azalia Mirhoseini.
+\newblock Large language monkeys: Scaling inference compute with repeated
+  sampling.
+\newblock In \emph{ICLR (submission/openreview)}, 2024--2025.
+\newblock URL \url{https://openreview.net/forum?id=0xUEBQV54B}.
+\newblock OpenReview preprint.
+
+\bibitem[Chen et~al.(2024)Chen, Li, and Niu]{chen2024bot}
+Sijia Chen, Baochun Li, and Di~Niu.
+\newblock Boosting of thoughts: Trial-and-error problem solving with large
+  language models.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2402.11140}.
+
+\bibitem[Chen et~al.(2023)Chen, Ma, Wang, and Cohen]{chen2022pot}
+Wenhu Chen, Xueguang Ma, Xinyi Wang, and William~W. Cohen.
+\newblock Program of thoughts prompting: Disentangling computation from
+  reasoning for numerical reasoning tasks.
+\newblock \emph{Transactions on Machine Learning Research}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2211.12588}.
+
+\bibitem[Cobbe et~al.(2021)Cobbe, Kosaraju, Bavarian, Chen, Jun, Kaiser,
+  Plappert, Tworek, Hilton, Nakano, Hesse, and Schulman]{cobbe2021verifier}
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz
+  Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano,
+  Christopher Hesse, and John Schulman.
+\newblock Training verifiers to solve math word problems.
+\newblock 2021.
+\newblock URL \url{https://arxiv.org/abs/2110.14168}.
+
+\bibitem[Ding et~al.(2023)]{ding2023xot}
+Ning Ding et~al.
+\newblock Everything-of-thoughts: Defying the law of penrose triangle for llm
+  reasoning.
+\newblock 2023.
+\newblock URL \url{https://arxiv.org/abs/2311.04254}.
+
+\bibitem[Ding et~al.(2025)Ding, Jiang, Liu, Jing, Guo, Wang, Zhang, Wang, Liu,
+  Du, Liu, and Tao]{ding2025dpts}
+Yifu Ding, Wentao Jiang, Shunyu Liu, Yongcheng Jing, Jinyang Guo, Yingjie Wang,
+  Jing Zhang, Zengmao Wang, Ziwei Liu, Bo~Du, Xianglong Liu, and Dacheng Tao.
+\newblock Dynamic parallel tree search for efficient llm reasoning.
+\newblock In \emph{Proceedings of the 63rd Annual Meeting of the Association
+  for Computational Linguistics (ACL)}, 2025.
+\newblock URL \url{https://arxiv.org/abs/2502.16235}.
+
+\bibitem[Gao et~al.()Gao, Madaan, Zhou, Alon, Liu, Yang, Callan, and
+  Neubig]{gao2022pal}
+Luyu Gao, Aman Madaan, Shuyan Zhou, Uri Alon, Pengfei Liu, Yiming Yang, Jamie
+  Callan, and Graham Neubig.
+\newblock Program-aided language models.
+\newblock \emph{arXiv preprint arXiv:2211.10435}.
+\newblock URL \url{https://arxiv.org/abs/2211.10435}.
+
+\bibitem[Kojima et~al.(2022)Kojima, Gu, Reid, Matsuo, and
+  Iwasawa]{kojima2022zeroshotcot}
+Takeshi Kojima, Shixiang~Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke
+  Iwasawa.
+\newblock Large language models are zero-shot reasoners.
+\newblock 2022.
+\newblock \doi{10.48550/arXiv.2205.11916}.
+\newblock URL \url{https://arxiv.org/abs/2205.11916}.
+
+\bibitem[Lanham et~al.(2023)Lanham, Chen, Radhakrishnan,
+  et~al.]{lanham2023measurefaithfulness}
+Tamera Lanham, Anna Chen, Ansh Radhakrishnan, et~al.
+\newblock Measuring faithfulness in chain-of-thought reasoning.
+\newblock 2023.
+\newblock URL \url{https://arxiv.org/abs/2307.13702}.
+
+\bibitem[Lightman et~al.(2023)Lightman, Kosaraju, Burda, Edwards, Baker, Lee,
+  Leike, Schulman, Sutskever, and Cobbe]{lightman2023verify}
+Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy
+  Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe.
+\newblock Let's verify step by step.
+\newblock Technical report, OpenAI, 2023.
+\newblock URL \url{https://arxiv.org/abs/2305.20050}.
+
+\bibitem[Luo et~al.(2024)]{luo2024omegaprm}
+Chang Luo et~al.
+\newblock Improve mathematical reasoning in large language models with process
+  rewards.
+\newblock 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.06592}.
+
+\bibitem[Lyu et~al.(2023)Lyu, Havaldar, Stein, Zhang, Rao, Wong, Apidianaki,
+  and Callison-Burch]{lyu2023faithfulcot}
+Qing Lyu, Shreya Havaldar, Adam Stein, Li~Zhang, Delip Rao, Eric Wong, Marianna
+  Apidianaki, and Chris Callison-Burch.
+\newblock Faithful chain-of-thought reasoning.
+\newblock In \emph{IJCNLP-AACL}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2301.13379}.
+
+\bibitem[Madaan et~al.()Madaan, Tandon, Gupta, Hallinan, Gao, Wiegreffe, Alon,
+  Dziri, Prabhumoye, Yang, Gupta, Majumder, Hermann, Welleck, Yazdanbakhsh, and
+  Clark]{madaan2023selfrefine}
+Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah
+  Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank
+  Gupta, Bodhisattwa~Prasad Majumder, Katherine~A. Hermann, Sean Welleck, Amir
+  Yazdanbakhsh, and Peter Clark.
+\newblock Self-refine: Iterative refinement with self-feedback.
+\newblock \emph{arXiv preprint arXiv:2303.17651}.
+\newblock URL \url{https://arxiv.org/abs/2303.17651}.
+
+\bibitem[Ning et~al.(2024)]{ning2023sot}
+Xupeng Ning et~al.
+\newblock Skeleton-of-thought: Prompting llms for efficient parallel
+  generation.
+\newblock In \emph{International Conference on Learning Representations (ICLR)
+  — slides/poster}, 2024.
+\newblock URL \url{https://arxiv.org/abs/2307.15337}.
+
+\bibitem[Press et~al.(2023)Press, Zhang, Min, Schmidt, Smith, and
+  Lewis]{press2022selfask}
+Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah~A. Smith, and Mike
+  Lewis.
+\newblock Measuring and narrowing the compositionality gap in language models.
+\newblock In \emph{Findings of EMNLP}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2210.03350}.
+\newblock Self-Ask prompting.
+
+\bibitem[Shinn et~al.(2023)Shinn, Cassano, Berman, Gopinath, Narasimhan, and
+  Yao]{shinn2023reflexion}
+Noah Shinn, Federico Cassano, Edward Berman, Ashwin Gopinath, Karthik
+  Narasimhan, and Shunyu Yao.
+\newblock Reflexion: Language agents with verbal reinforcement learning.
+\newblock In \emph{Advances in Neural Information Processing Systems
+  (NeurIPS)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2303.11366}.
+
+\bibitem[Turpin et~al.(2023)]{turpin2023dontsaysay}
+Miles Turpin et~al.
+\newblock Language models don't always say what they think: Unfaithful
+  explanations in chain-of-thought.
+\newblock 2023.
+\newblock URL \url{https://arxiv.org/abs/2305.04388}.
+
+\bibitem[Wang et~al.(2023)Wang, Xu, Lan, Hu, Lan, Lee, and
+  Lim]{wang2023planandsolve}
+Lei Wang, Wanyu Xu, Yihuai Lan, Zhiqiang Hu, Yunshi Lan, Roy Ka-Wei Lee, and
+  Ee-Peng Lim.
+\newblock Plan-and-solve prompting: Improving zero-shot chain-of-thought
+  reasoning by large language models.
+\newblock In \emph{Proceedings of the 61st Annual Meeting of the Association
+  for Computational Linguistics (ACL)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2305.04091}.
+
+\bibitem[Wang et~al.(2022)Wang, Wei, Schuurmans, Le, Chi, Narang, Chowdhery,
+  and Zhou]{wang2022selfconsistency}
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed~Chi, Sharan Narang,
+  Aakanksha Chowdhery, and Denny Zhou.
+\newblock Self-consistency improves chain of thought reasoning in language
+  models.
+\newblock 2022.
+\newblock URL \url{https://arxiv.org/abs/2203.11171}.
+
+\bibitem[Wei et~al.()Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le, and
+  Zhou]{wei2022cot}
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia,
+  Ed~H. Chi, Quoc~V. Le, and Denny Zhou.
+\newblock Chain of thought prompting elicits reasoning in large language
+  models.
+\newblock \emph{arXiv preprint arXiv:2201.11903}.
+\newblock URL \url{https://arxiv.org/abs/2201.11903}.
+
+\bibitem[Weng et~al.(2023)Weng, Zhu, Xia, Li, He, Liu, Sun, Liu, and
+  Zhao]{weng2022selfverification}
+Yixuan Weng, Minjun Zhu, Fei Xia, Bin Li, Shizhu He, Shengping Liu, Bin Sun,
+  Kang Liu, and Jun Zhao.
+\newblock Large language models are better reasoners with self-verification.
+\newblock In \emph{Findings of the Association for Computational Linguistics:
+  EMNLP}, 2023.
+\newblock URL \url{https://aclanthology.org/2023.findings-emnlp.167.pdf}.
+
+\bibitem[Xie et~al.(2024)]{xie2024mcts}
+Shibo Xie et~al.
+\newblock Monte carlo tree search boosts reasoning via divergence-driven
+  selection of chain-of-thoughts.
+\newblock 2024.
+\newblock URL \url{https://arxiv.org/abs/2405.00451}.
+
+\bibitem[Yang et~al.(2024)Yang, Yu, Zhang, Cao, Xu, Zhang, Gonzalez, and
+  Cui]{yang2024bot}
+Ling Yang, Zhaochen Yu, Tianjun Zhang, Shiyi Cao, Minkai Xu, Wentao Zhang,
+  Joseph~E. Gonzalez, and Bin Cui.
+\newblock Buffer of thoughts: Thought-augmented reasoning with large language
+  models.
+\newblock 2024.
+\newblock URL \url{https://arxiv.org/abs/2406.04271}.
+
+\bibitem[Yao et~al.()Yao, Yu, Zhao, Shafran, Griffiths, Cao, and
+  Narasimhan]{yao2023tot}
+Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas~L. Griffiths, Yuan
+  Cao, and Karthik Narasimhan.
+\newblock Tree of thoughts: Deliberate reasoning via large language models.
+\newblock \emph{arXiv preprint arXiv:2305.10601}.
+\newblock URL \url{https://arxiv.org/abs/2305.10601}.
+
+\bibitem[Yao et~al.(2023)Yao, Zhao, Yu, Du, Shafran, Narasimhan, and
+  Cao]{yao2023react}
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan,
+  and Yuan Cao.
+\newblock React: Synergizing reasoning and acting in language models.
+\newblock In \emph{International Conference on Learning Representations
+  (ICLR)}, 2023.
+\newblock URL \url{https://arxiv.org/abs/2210.03629}.
+
+\bibitem[Zhang \& coauthors(2024)Zhang and
+  coauthors]{zhang2024generativeverifiers}
+Linjun Zhang and coauthors.
+\newblock Generative verifiers: Reward modeling as next-token prediction.
+\newblock 2024.
+\newblock URL \url{https://arxiv.org/abs/2408.15240}.
+
+\bibitem[Zhou et~al.(2022)Zhou, Sch{\"a}rli, Hou, Wei, Scales, Wang, Chen,
+  Bousquet, Cui, Schuurmans, Chi, and Le]{zhou2022ltm}
+Denny Zhou, Nathanael Sch{\"a}rli, Le~Hou, Jason Wei, Nathan Scales, Xuezhi
+  Wang, Dale Chen, Olivier Bousquet, Claire Cui, Dale Schuurmans, Ed~Chi, and
+  Quoc Le.
+\newblock Least-to-most prompting enables complex reasoning in large language
+  models.
+\newblock 2022.
+\newblock URL \url{https://arxiv.org/abs/2205.10625}.
 
 \end{thebibliography}
