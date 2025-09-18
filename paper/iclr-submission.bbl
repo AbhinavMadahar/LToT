@@ -49,22 +49,24 @@ Wenhu Chen, Xueguang Ma, Xinyi Wang, and William~W. Cohen.
 \newblock \emph{Transactions on Machine Learning Research}, 2023.
 \newblock URL \url{https://arxiv.org/abs/2211.12588}.
 
-\bibitem[Cobbe et~al.()Cobbe, Kosaraju, Bavarian, Chen, Jun, Kaiser, Plappert,
-  Tworek, Hilton, Nakano, Hesse, and Schulman]{cobbe2021verifiers}
+\bibitem[Cobbe et~al.(2021{\natexlab{a}})Cobbe, Kosaraju, Bavarian, Chen, Jun,
+  Kaiser, Plappert, Tworek, Hilton, Nakano, Hesse, and
+  Schulman]{cobbe2021verifier}
 Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz
   Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano,
   Christopher Hesse, and John Schulman.
 \newblock Training verifiers to solve math word problems.
-\newblock \emph{arXiv preprint arXiv:2110.14168}.
+\newblock 2021{\natexlab{a}}.
 \newblock URL \url{https://arxiv.org/abs/2110.14168}.
 
-\bibitem[Cobbe et~al.(2021)Cobbe, Kosaraju, Bavarian, Chen, Jun, Kaiser,
-  Plappert, Tworek, Hilton, Nakano, Hesse, and Schulman]{cobbe2021verifier}
+\bibitem[Cobbe et~al.(2021{\natexlab{b}})Cobbe, Kosaraju, Bavarian, Chen, Jun,
+  Kaiser, Plappert, Tworek, Hilton, Nakano, Hesse, and
+  Schulman]{cobbe2021verifiers}
 Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz
   Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano,
   Christopher Hesse, and John Schulman.
 \newblock Training verifiers to solve math word problems.
-\newblock 2021.
+\newblock \emph{arXiv preprint arXiv:2110.14168}, 2021{\natexlab{b}}.
 \newblock URL \url{https://arxiv.org/abs/2110.14168}.
 
 \bibitem[de~Bono(1967)]{debono1967lateral}
@@ -89,12 +91,12 @@ Yifu Ding, Wentao Jiang, Shunyu Liu, Yongcheng Jing, Jinyang Guo, Yingjie Wang,
   for Computational Linguistics (ACL)}, 2025.
 \newblock URL \url{https://arxiv.org/abs/2502.16235}.
 
-\bibitem[Gao et~al.()Gao, Madaan, Zhou, Alon, Liu, Yang, Callan, and
+\bibitem[Gao et~al.(2022)Gao, Madaan, Zhou, Alon, Liu, Yang, Callan, and
   Neubig]{gao2022pal}
 Luyu Gao, Aman Madaan, Shuyan Zhou, Uri Alon, Pengfei Liu, Yiming Yang, Jamie
   Callan, and Graham Neubig.
 \newblock Program-aided language models.
-\newblock \emph{arXiv preprint arXiv:2211.10435}.
+\newblock \emph{arXiv preprint arXiv:2211.10435}, 2022.
 \newblock URL \url{https://arxiv.org/abs/2211.10435}.
 
 \bibitem[Kojima et~al.(2022)Kojima, Gu, Reid, Matsuo, and
@@ -136,15 +138,15 @@ Qing Lyu, Shreya Havaldar, Adam Stein, Li~Zhang, Delip Rao, Eric Wong, Marianna
 \newblock In \emph{IJCNLP-AACL}, 2023.
 \newblock URL \url{https://arxiv.org/abs/2301.13379}.
 
-\bibitem[Madaan et~al.()Madaan, Tandon, Gupta, Hallinan, Gao, Wiegreffe, Alon,
-  Dziri, Prabhumoye, Yang, Gupta, Majumder, Hermann, Welleck, Yazdanbakhsh, and
-  Clark]{madaan2023selfrefine}
+\bibitem[Madaan et~al.(2023)Madaan, Tandon, Gupta, Hallinan, Gao, Wiegreffe,
+  Alon, Dziri, Prabhumoye, Yang, Gupta, Majumder, Hermann, Welleck,
+  Yazdanbakhsh, and Clark]{madaan2023selfrefine}
 Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah
   Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank
   Gupta, Bodhisattwa~Prasad Majumder, Katherine~A. Hermann, Sean Welleck, Amir
   Yazdanbakhsh, and Peter Clark.
 \newblock Self-refine: Iterative refinement with self-feedback.
-\newblock \emph{arXiv preprint arXiv:2303.17651}.
+\newblock \emph{arXiv preprint arXiv:2303.17651}, 2023.
 \newblock URL \url{https://arxiv.org/abs/2303.17651}.
 
 \bibitem[Ning et~al.(2024)]{ning2023sot}
@@ -199,13 +201,13 @@ Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed~Chi, Sharan Narang,
 \newblock 2022.
 \newblock URL \url{https://arxiv.org/abs/2203.11171}.
 
-\bibitem[Wei et~al.()Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le, and
-  Zhou]{wei2022cot}
+\bibitem[Wei et~al.(2022)Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le,
+  and Zhou]{wei2022cot}
 Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia,
   Ed~H. Chi, Quoc~V. Le, and Denny Zhou.
 \newblock Chain of thought prompting elicits reasoning in large language
   models.
-\newblock \emph{arXiv preprint arXiv:2201.11903}.
+\newblock \emph{arXiv preprint arXiv:2201.11903}, 2022.
 \newblock URL \url{https://arxiv.org/abs/2201.11903}.
 
 \bibitem[Weng et~al.(2023)Weng, Zhu, Xia, Li, He, Liu, Sun, Liu, and
@@ -233,21 +235,21 @@ Ling Yang, Zhaochen Yu, Tianjun Zhang, Shiyi Cao, Minkai Xu, Wentao Zhang,
 \newblock 2024.
 \newblock URL \url{https://arxiv.org/abs/2406.04271}.
 
-\bibitem[Yao et~al.()Yao, Yu, Zhao, Shafran, Griffiths, Cao, and
-  Narasimhan]{yao2023tot}
+\bibitem[Yao et~al.(2023{\natexlab{a}})Yao, Yu, Zhao, Shafran, Griffiths, Cao,
+  and Narasimhan]{yao2023tot}
 Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas~L. Griffiths, Yuan
   Cao, and Karthik Narasimhan.
 \newblock Tree of thoughts: Deliberate reasoning via large language models.
-\newblock \emph{arXiv preprint arXiv:2305.10601}.
+\newblock \emph{arXiv preprint arXiv:2305.10601}, 2023{\natexlab{a}}.
 \newblock URL \url{https://arxiv.org/abs/2305.10601}.
 
-\bibitem[Yao et~al.(2023)Yao, Zhao, Yu, Du, Shafran, Narasimhan, and
-  Cao]{yao2023react}
+\bibitem[Yao et~al.(2023{\natexlab{b}})Yao, Zhao, Yu, Du, Shafran, Narasimhan,
+  and Cao]{yao2023react}
 Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan,
   and Yuan Cao.
 \newblock React: Synergizing reasoning and acting in language models.
 \newblock In \emph{International Conference on Learning Representations
-  (ICLR)}, 2023.
+  (ICLR)}, 2023{\natexlab{b}}.
 \newblock URL \url{https://arxiv.org/abs/2210.03629}.
 
 \bibitem[Zhang \& coauthors(2024)Zhang and
