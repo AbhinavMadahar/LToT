@@ -1,4 +1,4 @@
-\begin{thebibliography}{29}
+\begin{thebibliography}{31}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -49,6 +49,15 @@ Wenhu Chen, Xueguang Ma, Xinyi Wang, and William~W. Cohen.
 \newblock \emph{Transactions on Machine Learning Research}, 2023.
 \newblock URL \url{https://arxiv.org/abs/2211.12588}.
 
+\bibitem[Cobbe et~al.()Cobbe, Kosaraju, Bavarian, Chen, Jun, Kaiser, Plappert,
+  Tworek, Hilton, Nakano, Hesse, and Schulman]{cobbe2021verifiers}
+Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz
+  Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano,
+  Christopher Hesse, and John Schulman.
+\newblock Training verifiers to solve math word problems.
+\newblock \emph{arXiv preprint arXiv:2110.14168}.
+\newblock URL \url{https://arxiv.org/abs/2110.14168}.
+
 \bibitem[Cobbe et~al.(2021)Cobbe, Kosaraju, Bavarian, Chen, Jun, Kaiser,
   Plappert, Tworek, Hilton, Nakano, Hesse, and Schulman]{cobbe2021verifier}
 Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz
@@ -57,6 +66,12 @@ Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz
 \newblock Training verifiers to solve math word problems.
 \newblock 2021.
 \newblock URL \url{https://arxiv.org/abs/2110.14168}.
+
+\bibitem[de~Bono(1967)]{debono1967lateral}
+Edward de~Bono.
+\newblock \emph{The Use of Lateral Thinking}.
+\newblock Jonathan Cape, London, U.K., 1967.
+\newblock ISBN 978-0-224-61931-2.
 
 \bibitem[Ding et~al.(2023)]{ding2023xot}
 Ning Ding et~al.

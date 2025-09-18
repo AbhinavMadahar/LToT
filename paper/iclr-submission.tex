@@ -28,6 +28,51 @@
 \section{Introduction}
 \label{section:introduction}
 
+\paragraph{Problem.}
+Modern language models (LMs) are increasingly deployed in \emph{compute--rich} inference regimes: users and systems budget thousands of tokens or many node expansions per query in return for reliability.
+The dominant recipe for using this budget is structured search, most commonly Tree--of--Thoughts (ToT) over partial solutions \citep{yao2023tot}, layered on top of stepwise prompting \citep{wei2022cot,wang2022selfconsistency,kojima2022zeroshotcot}.
+In this regime two failure modes grow worse as budgets grow:
+(i) \emph{utility saturation}—breadth collapses as near--duplicates absorb extra samples; and
+(ii) \emph{depth myopia}—noisy early utility estimates prune branches that are logically consistent but need a few more steps to pay off.
+Together they leave compute idle or misallocated, especially on long--horizon math, code, and search puzzles.
+
+\paragraph{Thesis.}
+We argue that inference--time controllers should treat \emph{logically consistent, low--utility} candidates as assets, not waste.
+The architectural move is to separate \emph{consistency/continuability} from \emph{utility}, and to invest cheap budget into short \emph{predictive continuations} of many consistent branches until a small number of them demonstrate sustained marginal improvement.
+This idea echoes ``lateral thinking'' \citep{debono1967lateral}: rather than deepening a few promising threads, maintain wide, low--commitment exploration that can be \emph{promoted} the instant it proves itself.
+
+\paragraph{Approach (LToT).}
+We introduce \textbf{Lateral Tree--of--Thoughts (LToT)}, a drop--in search--time controller that operationalizes the thesis above.
+LToT maintains a \emph{dual--score frontier}: high--$v$ \emph{mainlines} that drive exploitation, and a large pool of high--consistency but low--$v$ \emph{laterals} that are explored by a budgeted racing procedure.
+The racing core, \textbf{LR--SC} (lateral racing with short--circuit), allocates \emph{micro--budgets} to laterals in successive rungs, using robust, \emph{order--aware} improvement statistics (slope/curvature of a branch envelope) and a \emph{width--aware} bar with a cheap \emph{repeat--to--confirm} to control multiplicity.
+When any lateral's envelope clears the \emph{mainline bar}, LR--SC \emph{short--circuits} back to exploitation and promotes that branch.
+Mainlines are deliberately kept narrow (beam/quota caps) to avoid exponential depth blow--up; surplus compute is funneled into the cheap, wide lateral race.
+Promotion is bound to verifier--aligned outcomes (exact match or tests on math/code) and uses a dual plausibility/consistency gate on open--ended QA \citep{cobbe2021verifiers}.
+
+\paragraph{Why this helps.}
+The design converts extra tokens into \emph{principled diversity} where it is cheapest: lateral width.
+A simple cost law shows that LR--SC's lateral spend is $\Theta(N\log N)$ in initial width $N$ (constant cost per rung and $O(\log N)$ rungs), while mainlines would grow exponentially with depth if left uncapped.
+By allocating on \emph{marginal improvement} rather than level, LR--SC rescues branches that a single noisy utility reading would discard, while width--aware thresholds prevent ``lucky spikes'' from polluting mainlines.
+In aggregate, LToT mitigates breadth saturation and depth myopia without inflating compute.
+
+\paragraph{Contributions.}
+\begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
+    \item \textbf{Architecture.} We propose LToT, a controller that keeps mainlines narrow and pushes exploration laterally through LR--SC---a successive--halving race with short--circuit promotion, robust order--aware detection, and freeze--thaw survivors.
+    \item \textbf{Promotion discipline.} We bind promotion to verifier--aligned outcomes (exact match/tests for math/code) and introduce a dual gate for QA (plausibility and path consistency), reducing mainline contamination under noisy evaluators.
+    \item \textbf{Multiplicity control.} We derive width--aware bars (sub--Gaussian, sub--Gamma, and sub--Weibull variants) and a repeat--to--confirm rule that keep false promotions bounded as lateral width grows; we also handle correlation via an effective width.
+    \item \textbf{Theory.} We prove a pseudolinear lateral cost law $\Theta(N\log N)$, logarithmic rung depth, and error bounds under mild tail assumptions, and contrast this with exponential growth in uncapped mainlines.
+    \item \textbf{Empirics.} Across math (GSM variants, MATH--500), code (HumanEval/MBPP--lite), and a canonical ToT puzzle (Game of 24), LToT improves Success@1/Pass@1 at matched compute over CoT, vanilla ToT, and MCTS with progressive widening \citep{xie2024mcts}, while lowering false promotions and time--to--first--hit via short--circuiting.
+\end{enumerate}
+
+\paragraph{Scope and relation to prior art.}
+LToT complements inference--time scaling via best--of--$n$ \citep{chen2024bot,yang2024bot} and revising/self--improvement \citep{madaan2023selfrefine}, and sits alongside program/tool--aided reasoning \citep{gao2022pal,chen2022pot}.
+Its novelty is not another search heuristic but a \emph{control principle}: separate consistency from utility; allocate on marginal improvement; and convert surplus compute into lateral breadth with guarantees.
+
+\paragraph{Roadmap.}
+Sec.~\ref{section:motivation} formalizes the saturation/myopia tension.
+Sec.~\ref{section:architecture-design} instantiates LToT: the dual--score frontier, LR--SC, and promotion discipline.
+Sec.~\ref{section:experiments} describes benchmarks and protocols; Sec.~\ref{section:results} reports results and ablations.
+Appendices provide evaluator details, heavy--tail bars, and worked traces.
 \section{Motivation}
 \label{section:motivation}
 \paragraph{The near-term problem at frontier scale.}
@@ -833,10 +878,23 @@ We will also evaluate drop-in mitigations that preserve the pseudolinear lateral
 \section{Conclusion}
 \label{section:conclusion}
 
-% Shown only in camera-ready (not in anonymous submissions)
-\ificlrfinal
-\section*{Acknowledgements}
-\fi
+LToT reframes inference--time search around a simple asymmetry: \emph{depth is expensive, lateral width is cheap}.
+By keeping mainlines narrow and racing a very wide set of logically consistent, low--utility branches with short, order--aware probes, the controller turns extra tokens into \emph{productive} breadth instead of redundant deepening.
+Width--aware bars and repeat--to--confirm bound multiplicity; verifier--aligned promotion prevents contamination under noisy or drifting evaluators.
+Across math, code, and ToT--style puzzles, this yields higher Success@1/Pass@1 at matched compute, faster time--to--first--hit via short--circuiting, and cleaner error profiles relative to ToT/MCTS baselines.
+
+Two takeaways generalize beyond our specific rules.
+First, \emph{separating consistency from utility} is a robust design pattern for LM controllers: treat logically coherent partials as cheap options whose value is revealed by small, staged investments.
+Second, \emph{allocate on marginal gain}, not absolute level: trend detectors (slope/curvature) recover longer--horizon payoffs that noisy early scores would prune.
+
+\paragraph{Limitations.}
+LToT assumes access to a minimally aligned consistency signal (path checks or local verifier proxies) and benefits from exact or programmatic promotion targets; in purely open--ended settings the dual QA gate is protective but conservative.
+Our cost and error analyses rely on sub--exponential rung noise and approximate independence across confirmation probes; extreme long--range dependence can tighten effective width.
+Finally, our experiments, while broad, use matched--compute caps and open--weight models; closed models and hardware/serving constraints may shift latency tradeoffs.
+
+\paragraph{Outlook.}
+Section~\ref{section:future-work} sketches next steps: cascaded controllers that escalate verification rigor; stronger correlation modeling for width--aware bars; coupling LR--SC with training--time preference/verification signals; and multi--agent settings where lateral promotion is coordinated across roles.
+We view LToT as a near--term, drop--in upgrade to inference--time search that scales gracefully with budget and horizon, and as a concrete operationalization of lateral thinking in LM reasoning.
 
 % ---- BibTeX with natbib (ICLR style) ----
 \bibliographystyle{iclr2025_conference}
