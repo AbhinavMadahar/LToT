@@ -1,0 +1,24 @@
+
+name: ltot-exp
+channels: [conda-forge, pytorch, nvidia, defaults]
+dependencies:
+  - python=3.10
+  - pip
+  - pytorch
+  - pytorch-cuda=12.1
+  - cudatoolkit
+  - snakemake>=8.10
+  - mamba
+  - numpy
+  - pandas
+  - scipy
+  - pydantic
+  - typer
+  - tokenizers
+  - matplotlib
+  - pip:
+      - transformers>=4.42.0
+      - accelerate
+      - datasets
+      - sentencepiece
+      - bitsandbytes

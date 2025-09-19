@@ -1,0 +1,72 @@
+
+models:
+  S:
+    name: "Llama-3.1-8B-Instruct"
+    path: "/scratch/$USER/models/Llama-3.1-8B-Instruct"
+    dtype: "bfloat16"
+    max_model_len: 4096
+  M:
+    name: "Mixtral-8x7B-Instruct"
+    path: "/scratch/$USER/models/mixtral-8x7b-instruct"
+    dtype: "bfloat16"
+    max_model_len: 8192
+  L:
+    name: "Llama-3.1-70B-Instruct"
+    path: "/scratch/$USER/models/Llama-3.1-70B-Instruct"
+    dtype: "bfloat16"
+    max_model_len: 8192
+
+budgets:
+  S: {low: 350, med: 700, high: 1400}
+  M: {low: 500, med: 1000, high: 2000}
+  L: {low: 700, med: 1400, high: 2800}
+
+benchmarks:
+  gsm_hard:
+    type: "math"
+    source: "hf:gsm8k"
+    split: "test"
+  math_500:
+    type: "math"
+    source: "file:data/math_500.jsonl"
+  humaneval:
+    type: "code"
+    source: "hf:openai_humaneval"
+    split: "test"
+  mbpp_lite:
+    type: "code"
+    source: "hf:mbpp"
+    split: "test"
+  game24:
+    type: "puzzle"
+    source: "file:data/game24.jsonl"
+
+methods:
+  - CoT
+  - ToT
+  - LToT
+
+ltot_defaults:
+  eta: 4
+  base_budget: 1
+  micro_probe: 1
+  overflow_cap: 0.15
+  k_microbeam: 3
+  bar_kappa: 1.0
+  bar_delta: 0.05
+  derivatives: [1, 2]
+  horizons: "geom(1,2,4,8,...)"
+  plateau:
+    ewma_alpha: 0.3
+    min_compute_window: 200
+    slope_threshold: 1e-4
+
+slurm_defaults:
+  gpus: 1
+  cpus: 8
+  mem_mb: 32000
+  runtime: "04:00:00"
+  partition: "${ARC_PARTITION}"
+  qos: "${ARC_QOS}"
+  account: "${ARC_ACCOUNT}"
+  constraint: "${ARC_CONSTRAINT}"

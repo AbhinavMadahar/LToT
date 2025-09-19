@@ -1,0 +1,33 @@
+
+# Snakemake 8+ profile
+executor: slurm
+jobs: 200
+keep-going: true
+rerun-incomplete: true
+latency-wait: 60
+print-shell-command: true
+software-deployment-method: conda
+
+default-resources:
+  - runtime="02:00:00"
+  - mem_mb=16000
+  - cpus=8
+  - gpus=1
+  - partition="gpu"
+  - qos="standard"
+  - account=""
+  - constraint=""
+
+cluster-generic-args:
+  - "--partition={resources.partition}"
+  - "--qos={resources.qos}"
+  - "--account={resources.account}"
+  - "--constraint={resources.constraint}"
+  - "--gres=gpu:{resources.gpus}"
+  - "--cpus-per-task={resources.cpus}"
+  - "--mem={resources.mem_mb}"
+  - "--time={resources.runtime}"
+
+# log configuration
+use-conda: true
+conda-frontend: mamba

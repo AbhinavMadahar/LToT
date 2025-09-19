@@ -1,0 +1,9 @@
+
+include: "workflow/paper/Snakefile.paper"
+include: "workflow/experiments/experiments.smk"
+
+rule all:
+    input:
+        "results/artifact.jsonl",
+        WHITE_PAPER_DESTINATION_FILE_PATH,
+        ICLR_SUBMISSION_DESTINATION_FILE_PATH
