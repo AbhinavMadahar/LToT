@@ -272,7 +272,118 @@ git push origin <your-branch>
 
 ---
 
-## 7) Tuning (only if needed)
+## 7) Aggressively maximize compute on ARC (optional)
+
+> **Use responsibly.** These settings push for high concurrency to shorten wall time. Follow your group’s fair‑share and any ARC usage policies. Start with defaults (Section 3) and only enable this when you explicitly want to saturate available GPUs.
+
+### A. One‑liner (most users)
+
+From the repo root, with your env activated:
+
+```bash
+# Submit aggressively with high concurrency and quick status polling
+snakemake --profile profiles/arc all \
+  --jobs 400 \
+  --latency-wait 90 \
+  --restart-times 2 \
+  --max-jobs-per-second 15 \
+  --max-status-checks-per-second 10
+```
+
+What this does:
+
+- **`--jobs 400`**: allow up to 400 concurrent Slurm jobs in the queue (the Slurm profile converts each rule to an sbatch). Slurm will enforce the actual running limit via partitions/QoS/quotas, but this keeps the pipeline fed.
+- **`--latency-wait 90`**: gives the scheduler time to materialize output files before declaring a miss.
+- **`--restart-times 2`**: auto‑resubmit transient failures (e.g., preemption, node hiccups).
+- **Rate limits** prevent flooding the scheduler.
+
+> If ARC pushes back on submission rates, reduce `--max-jobs-per-second` to 3–5.
+
+### B. Partition, QoS, and wall‑time knobs
+
+Edit `profiles/arc/cluster.yaml` and adjust these placeholders to match what you are allowed to use:
+
+- **Partition**: set `-p` to your GPU partition(s). If multiple partitions are usable, list them by rule or create rule‑specific overrides (see D below).
+- **QoS**: set `--qos` to the highest you’re entitled to. If you have both *standard* and *basic*, keep *standard* for long jobs and use *basic* with short time limits for backfill.
+- **Wall‑time**: shorten `-t` on opportunistic rules (e.g., data preprocessing, figure rendering). Short jobs backfill quickly.
+
+You can override at the CLI for a single run:
+
+```bash
+snakemake --profile profiles/arc all \
+  --set-resources :qos=basic,:partition=gpu,:time=02:00:00
+```
+
+The `:key=value` form applies to **all** rules; use `rule_name:key=value` to scope.
+
+### C. GPU type and count
+
+Each GPU rule declares its default in the workflow. You can raise counts and add fallbacks when you want to absorb more hardware:
+
+```bash
+# Example: request 2 GPUs for the heavy frontier runs
+snakemake --profile profiles/arc all \
+  --set-resources frontier_eval:gpus=2 \
+  --set-resources sae_eval:gpus=2
+```
+
+If ARC has heterogeneous GPUs, allow multiple types by editing the `--gres` template in `profiles/arc/cluster.yaml`, e.g., `gpu:A100:1` → `gpu:1` plus a `--constraint` list if ARC requires it. Keep rule‑level specificity for tasks that truly benefit from high‑end GPUs; let lighter rules accept mid‑tier GPUs so the scheduler has latitude.
+
+### D. Width and sharding to keep GPUs busy
+
+Broaden cheap lateral exploration to create many small, GPU‑bound tasks the scheduler can pack:
+
+- **Initial lateral width `n0`** in `config/budgets.yaml`: raise moderately (e.g., ×2) to generate more short probes per item.
+- **Shard the item pool** by seeds or subsets (already parameterized in `config/benchmarks.yaml`). More items ⇒ more independent jobs.
+- **Micro‑beam size `mµ`** (controller) and **overflow cap ρ**: conservative increases create extra candidates without large per‑job cost (see controller config).
+
+These changes preserve correctness—promotion remains verifier‑aligned—but expose more parallelism.
+
+### E. Short‑walltime “backfill” lanes (optional)
+
+For rules that tolerate preemption / restarts (e.g., lateral probes), create short‑time variants:
+
+- Duplicate the rule as `<rule>_short` with `-t 00:30:00`–`02:00:00` and the same outputs.
+- Add both as alternatives in the rule `group` so either can satisfy downstream needs.
+- Keep `--restart-times 2` in the profile; Snakemake will seamlessly retry on eviction.
+
+### F. Heterogeneous partitions
+
+You can route different rules to different partitions from the CLI without touching the workflow:
+
+```bash
+snakemake --profile profiles/arc all \
+  --set-resources frontier_eval:partition=gpu \
+  --set-resources math_eval:partition=gpu-short \
+  --set-resources code_eval:partition=gpu
+```
+
+### G. Don’t starve I/O
+
+High concurrency makes I/O the bottleneck. To stay safe:
+
+- Put **models and caches on `$SCRATCH`** and point `HF_HOME`, `TRANSFORMERS_CACHE` there (Section 2.3).
+- Keep logs on scratch (`logs/slurm/*` already set).
+- Avoid NFS‑mounted `$HOME` for model reads.
+
+### H. Safe resume / preemption‑tolerance
+
+This workflow is resume‑friendly:
+
+- Outputs are atomic; Snakemake won’t re‑run finished nodes.
+- Use `--rerun-incomplete` after a wide crash/preemption.
+- Keep `restart-times` ≥ 1 and enable controller **freeze–thaw** (default) so partial lateral work is not lost.
+
+### I. Quick sanity checks
+
+- `squeue -u $USER | wc -l` gives you a feel for inflight jobs.
+- `snakemake --summary | rg -v "^S+"` surfaces pending rules.
+- If Slurm throttles submissions, lower `--max-jobs-per-second` and stagger with `--scheduler greedy`.
+
+> **Rule of thumb:** favor **many short jobs** over a few long ones for opportunistic capacity; keep the truly heavy frontier runs narrow but parallel across items.
+
+---
+## 8) Tuning (only if needed)
 
 * **Budget/width:** `config/budgets.yaml` (initial lateral width `n0`, per‑task token caps).
 * **Controller params:** `config/controller.yaml` (η, ρ, micro‑probe, bar type: sub‑Gaussian / sub‑Gamma / sub‑Weibull, confirmation ON). Defaults mirror **§4.6 Design Choices and Defaults**.&#x20;
@@ -281,7 +392,7 @@ git push origin <your-branch>
 
 ---
 
-## 8) Troubleshooting
+## 9) Troubleshooting
 
 **No internet on nodes**
 Set:
@@ -314,7 +425,7 @@ Run from repo root: `snakemake --profile profiles/arc all`. Use absolute paths i
 
 ---
 
-## 9) Appendix: Minimal Slurm template (for ad‑hoc tests)
+## 10) Appendix: Minimal Slurm template (for ad‑hoc tests)
 
 If you ever need a raw batch script (you don’t for Snakemake), here’s a small template to adapt:
 
@@ -340,7 +451,7 @@ python tools/sanity_check.py --model-path $SCRATCH/models/llama3-8b-instruct
 
 ---
 
-## 10) References inside this repo
+## 11) References inside this repo
 
 * **LToT manuscript**: controller loop, LR‑SC, width‑aware bars, promotion discipline, and defaults (see **§4.2–§4.6**). These settings are what your pipeline uses.&#x20;
 * **Fixed Point Explainability**: optional ablation utilities use its “certificate up‑to‑infinity” notion for a stability check mode (disabled by default to keep cost down).&#x20;
