@@ -1,0 +1,112 @@
+cluster:
+  num_shards: 100
+  gpus_per_job: 4
+
+models: [llama-3.1-8b-instruct, mixtral-8x7b-instruct, llama-3.1-70b-instruct]
+
+budgets:
+  llama-3.1-8b-instruct:  [350, 700, 1400]
+  mixtral-8x7b-instruct:  [500, 1000, 2000]
+  llama-3.1-70b-instruct: [700, 1400, 2800]
+
+tasks: [gsm_plus, gsm_hard, math_500, humaneval, mbpp_lite, game24]
+seeds: [1, 2, 3]
+
+controllers:
+  ltot:
+    eta: 4
+    b0: 1
+    micro_probe: 1
+    overflow_cap: 0.15
+    kappa: 1.0
+    delta: 0.02
+    horizons: [1,2,4,8,16,32]
+    order_set: [1, 2]
+    mainline_topk: 1
+    mainline_width: 2
+    initial_lateral_width: 128
+    confirmation_temp: [0.7, 0.95]
+    micro_beam: 3
+    beta_alpha: 0.5
+
+plateau:
+  ewma_beta: 0.3
+  tau: 1.0e-4
+  hysteresis: 5.0e-5
+  patience_steps: 3
+  depth_banding: true
+  band_width: 2
+  min_compute_delta: 8
+
+bars:
+  tail_model: subgaussian   # subgaussian | subgamma | subweibull
+  subgamma: {nu: 1.0, c: 1.0}
+  subweibull: {K: 1.0, alpha: 1.5}
+  use_effective_width: true
+  winsorize_z: 3.5
+
+envelope:
+  agg: topk                 # topk | trimmed | power | weighted
+  power_p: 1.5
+  trim_frac: 0.15
+  omega_max: 0.7
+
+consistency:
+  lambdas: {logic: 0.7, syntax: 0.2, constraints: 0.1}
+  qa_dual_gate:
+    enabled: false
+    tau_v: 0.85
+    tau_c: 0.75
+    q: 0.25
+    tighten_if_lmonly: 0.10
+  admission_gate:
+    enabled: true
+    tau_c: 0.75
+    tighten_if_lmonly: 0.10
+    temperature: 0.0   # c_local scoring temp at admission
+
+equal_compute:
+  calibrate: true
+  tolerance_pp: 2.0
+  sample_per_task: 24
+  max_iters: 4
+
+width_scaling:
+  enabled: true
+  N0_values: [32, 64, 128, 256, 512, 1024]
+
+ablations:
+  - overflow_off
+  - no_curvature
+  - no_width_bar
+  - no_short_circuit
+  - no_plateau
+  - no_confirm
+
+noisy_v_study:
+  enabled: true              # when true, exploration uses LM-scored v_LM
+  tasks: [gsm_plus, math_500]
+  temp_low: 0.0              # rung-wise temperature randomization (inclusive)
+  temp_high: 0.8
+
+robustness_study:
+  enabled: false
+  tail: laplace
+  scale: 0.15
+  corr_rho: 0.20
+
+early_stop:
+  enabled: true
+
+diagnostics:
+  enable: true
+  sh_only_lateralization: true
+  sh_on_mainlines: true
+
+datasets:
+  canonical_lists:
+    gsm_hard_ids: data/canonical/gsm_hard_ids.txt
+    math500_ids:  data/canonical/math500_ids.txt
+    mbpp_ids:     data/canonical/mbpp_lite_ids.txt
+    game24:       data/canonical/game24_quads.txt
+  allow_fallback_heuristics: false

@@ -1,9 +1,83 @@
+import os, yaml
+from pathlib import Path
 
-include: "workflow/paper/Snakefile.paper"
-include: "workflow/experiments/experiments.smk"
+configfile: "configs/experiments.yaml"
+
+# Parallelization via shards (set by Slurm array worker)
+shard = int(os.environ.get("LTOT_SHARD", "0"))
+N_SHARDS = int(config["cluster"]["num_shards"])
+
+def shard_filter(items):
+    return [it for i, it in enumerate(items) if i % N_SHARDS == shard]
+
+# Base grid from config
+models = config["models"]
+tasks = config["tasks"]
+budgets = config["budgets"]
+seeds = config["seeds"]
+
+# Optional environment filters (for staged runs)
+task_filter = os.environ.get("LTOT_TASKS","").strip()
+if task_filter:
+    want = {t.strip() for t in task_filter.split(",") if t.strip()}
+    tasks = [t for t in tasks if t in want]
+
+model_filter = os.environ.get("LTOT_MODELS","").strip()
+if model_filter:
+    wantm = {m.strip() for m in model_filter.split(",") if m.strip()}
+    models = [m for m in models if m in wantm]
+
+seed_filter = os.environ.get("LTOT_SEEDS","").strip()
+if seed_filter:
+    seeds = [int(s) for s in seed_filter.split(",") if s.strip()]
+
+# Build shard-local worklist
+work = shard_filter([(m,t,b,s) for m in models for t in tasks for b in budgets[m] for s in seeds])
 
 rule all:
     input:
-        "results/artifact.jsonl",
-        WHITE_PAPER_DESTINATION_FILE_PATH,
-        ICLR_SUBMISSION_DESTINATION_FILE_PATH
+        "results/ltot_artifact.jsonl",
+        "figures/main_equal_compute.svg"
+
+rule run_unit:
+    output:
+        temp("results/raw/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run run --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule run_width_scaling:
+    output:
+        temp("results/raw_width/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run widthscale --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule run_ablations:
+    output:
+        temp("results/raw_ablate/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run ablate --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule run_earlystop:
+    output:
+        temp("results/raw_latency/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run earlystop --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule aggregate:
+    input:
+        raw     = [f"results/raw/{m}.{t}.{b}.{s}.jsonl"         for (m,t,b,s) in work],
+        raw_w   = [f"results/raw_width/{m}.{t}.{b}.{s}.jsonl"   for (m,t,b,s) in work],
+        raw_a   = [f"results/raw_ablate/{m}.{t}.{b}.{s}.jsonl"  for (m,t,b,s) in work],
+        raw_lat = [f"results/raw_latency/{m}.{t}.{b}.{s}.jsonl" for (m,t,b,s) in work]
+    output:
+        "results/ltot_artifact.jsonl",
+        "figures/main_equal_compute.svg"
+    shell:
+        "python -m ltot.run aggregate "
+        "--inputs results/raw --inputs_width results/raw_width --inputs_ablate results/raw_ablate "
+        "--inputs_latency results/raw_latency "
+        "--artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg"
