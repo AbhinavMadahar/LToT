@@ -1,7 +1,7 @@
 import argparse, os, json, random, glob, math, time
 from pathlib import Path
 import pandas as pd, yaml, numpy as np
-from .inference.backends import LocalLM, hf_model_id
+from .inference.backends import make_llm
 from .datasets import load_task
 from .evaluators import exact_match, run_python_tests, eval_game24, subset_unit_tests
 from .search.baselines import tot_baseline, mcts_pw_baseline
@@ -235,7 +235,7 @@ def do_run(args):
 
     aw = _mk_writer(args.out)
     rng = random.Random(args.seed)
-    llm = LocalLM(hf_model_id(args.model))
+    llm = make_llm(args.model)
 
     if parity.get("calibrate", True) and args.shard == 0:
         tasks_small = {}
@@ -285,7 +285,7 @@ def do_widthscale(args):
     Path("results/raw_width").mkdir(parents=True, exist_ok=True)
     ycfg = _load_cfg()
     aw = _mk_writer(args.out)
-    llm = LocalLM(hf_model_id(args.model))
+    llm = make_llm(args.model)
     _width_scaling(args, ycfg, llm, aw)
     aw.close()
 
@@ -293,7 +293,7 @@ def do_ablate(args):
     Path("results/raw_ablate").mkdir(parents=True, exist_ok=True)
     ycfg = _load_cfg()
     aw = _mk_writer(args.out)
-    llm = LocalLM(hf_model_id(args.model))
+    llm = make_llm(args.model)
     _ablations(args, ycfg, llm, aw)
     aw.close()
 
@@ -301,7 +301,7 @@ def do_earlystop(args):
     Path("results/raw_latency").mkdir(parents=True, exist_ok=True)
     ycfg = _load_cfg()
     aw = _mk_writer(args.out)
-    llm = LocalLM(hf_model_id(args.model))
+    llm = make_llm(args.model)
     noisy = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
     for item in load_task(args.task, args.seed):
         q = item.get("question") or item.get("prompt") or str(item.get("digits"))

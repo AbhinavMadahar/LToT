@@ -1,8 +1,46 @@
+import os, requests
 from typing import List, Tuple
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 _MODEL_CACHE = {}
+
+class OpenAICompatLM:
+    def __init__(self, model_id: str, base: str, api_key: str | None = None):
+        self.model_id = model_id
+        self.base = base.rstrip("/")
+        self.headers = {"Authorization": f"Bearer {api_key or 'dummy'}"}
+
+    def generate(self, prompts: List[str], max_tokens=128, temperature=0.7, top_p=0.95) -> Tuple[List[str], List[int]]:
+        outs, toks = [], []
+        for p in prompts:
+            payload = {
+                "model": self.model_id,
+                "prompt": p,
+                "max_tokens": int(max_tokens),
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+            }
+            r = requests.post(f"{self.base}/v1/completions", json=payload, headers=self.headers, timeout=600)
+            j = r.json()
+            outs.append((j["choices"][0].get("text") or "").strip())
+            toks.append(int(j.get("usage", {}).get("completion_tokens", 0)))
+        return outs, toks
+
+def make_llm(model_name: str, **local_kwargs):
+    """
+    Choose backend by env:
+      LTOT_BACKEND=local (default)  -> LocalLM(hf_model_id(...))
+      LTOT_BACKEND=openai           -> OpenAICompatLM at OPENAI_API_BASE
+    """
+    backend = os.getenv("LTOT_BACKEND", "local").lower()
+    if backend == "openai":
+        base = os.environ["OPENAI_API_BASE"]       # e.g., http://<ip>:8000
+        key  = os.getenv("OPENAI_API_KEY")         # vLLM usually ignores it; pass dummy if unset
+        return OpenAICompatLM(hf_model_id(model_name), base, api_key=key)
+    else:
+        # Pass through dtype/kwargs so you can run 70B across 4 GPUs with device_map="auto"
+        return LocalLM(hf_model_id(model_name), **local_kwargs)
 
 def hf_model_id(name: str) -> str:
     # Direct mapping; adjust to your local IDs if needed
@@ -48,4 +86,6 @@ class LocalLM:
             tail = text[len(self.tokenizer.decode(ipt["input_ids"][0], skip_special_tokens=True)):]
             outputs.append(tail.strip())
             toks.append(self._toklen(tail))
+            prompt_tok = int(ipt["input_ids"].shape[1])
+            toks.append(prompt_tok + self._toklen(tail))
         return outputs, toks

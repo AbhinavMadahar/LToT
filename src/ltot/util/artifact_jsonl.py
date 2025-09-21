@@ -7,7 +7,7 @@ class ArtifactWriter:
         self.f = open(path, "w", encoding="utf-8")
 
     def write(self, rec):
-        self.f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        self.f.write(json.dumps(rec, ensure_ascii=False) + "\n"); self.f.flush()
 
     def close(self):
         self.f.close()
