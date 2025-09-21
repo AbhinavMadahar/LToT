@@ -364,7 +364,6 @@ def do_aggregate(args):
     writer.close()
 
     if args.fig:
-        import pandas as pd, os
         if run_rows:
             df = pd.DataFrame(run_rows)
             svg = main_equal_compute_figure(df)
@@ -373,7 +372,6 @@ def do_aggregate(args):
                 f.write(svg)
 
     if promo_rows:
-        import pandas as pd, numpy as np
         pdf = pd.DataFrame(promo_rows)
         grp = pdf.groupby(["task","model","method","budget","seed"], dropna=False)
         for keys, g in grp:
@@ -391,7 +389,6 @@ def do_aggregate(args):
                                     "score":sel})+"\n")
 
     if ltot_runs:
-        import pandas as pd, numpy as np, yaml, math
         ycfg = {}
         try:
             with open("configs/experiments.yaml","r") as yf: ycfg = yaml.safe_load(yf)
