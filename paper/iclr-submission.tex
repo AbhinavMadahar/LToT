@@ -77,13 +77,11 @@ Yet the dominant search pattern—vanilla Tree-of-Thoughts (ToT)—\emph{under-u
     \item \textbf{Myopic pruning (depth myopia).} Early $v$ estimates are noisy and biased toward near-term payoff; logically consistent branches whose payoff is delayed by several steps are pruned as ``low-$v$'' even though they could mature into correct solutions. This creates \emph{myopic false negatives}.
 \end{enumerate}
 Both effects amplify with larger inference budgets: saturation wastes more samples as $k$ grows, and myopic pruning discards more candidates as depth increases.
-
 Let $k$ be the number of children sampled per expanded node and let $a$ be the acceptance fraction into the \emph{mainline}.
 If one does not cap mainline width, the expected number of mainline nodes at depth $d$ scales like $(ak)^d$, so the cost to depth $D$ is $\Theta((ak)^D)$—\emph{exponential in depth}.
 By contrast, controlling \emph{lateral} width with successive-halving (LR-SC; Sec.~\ref{sec:lrscr}) yields a total lateral exploration cost of $\Theta(N_0 \log_{\eta} N_0)$ for initial lateral width $N_0$ and culling factor $\eta>1$—\emph{pseudolinear in width}.
 This asymmetry suggests an architectural principle:
 \emph{keep mainlines narrow to avoid depth explosion and push width into laterals where it is cheap.}
-
 Three trends sharpen the pain points above:
 \begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
     \item \textbf{Bigger inference budgets.} Multi-round agents, tool calls, and safety-/verification-time checks raise the tolerated per-query compute. Without a controller that can convert budget into \emph{productive} breadth, ToT saturates early and the marginal return of extra tokens collapses.
@@ -95,7 +93,6 @@ Let a candidate node $x$ have an (unobserved) eventual value $\mu(x)$ if its bra
 An early evaluator observes $v(x) = \mu(x) - \lambda \,\Delta(x) + \varepsilon$, where $\Delta(x)$ is the (unknown) remaining steps to payoff, $\lambda>0$ captures horizon bias, and $\varepsilon$ is evaluator noise.
 When $\Delta(x)$ is moderate, $v(x)$ may fall below the mainline gate despite large $\mu(x)$.
 A controller that reasons about \emph{improvement after a small investment}—rather than $v(x)$ in isolation—can \emph{defer judgment}, test whether $x$ starts producing high-$v$ descendants quickly, and only then commit budget.
-
 To resolve saturation and myopia under large budgets, a search-time controller should:
 \begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
     \item \textbf{Allocate on marginal gain (not level).} Decide to continue a branch based on compute-normalized improvement of an envelope $V(\cdot)$ over a short, controlled lookahead; gate on robust trend (slope/curvature), not a single $v$ reading.
@@ -175,7 +172,6 @@ v(x) \in \mathbb{R} \quad \text{(utility; e.g., answer- or verifier-aligned)}, \
 c(x) \in [0,1] \quad \text{(logical consistency / soundness)}.
 \]
 We measure compute in either node expansions or tokens and denote cumulative compute by $C$.
-
 For any node $x$ with parent $p$, we define a \emph{local consistency} score
 \begin{equation}
 c_{\text{local}}(x)\;=\;\lambda_1\,s_{\text{logic}}(x\mid p)\;+\;\lambda_2\,s_{\text{syntax}}(x)\;+\;\lambda_3\,s_{\text{constraints}}(x),
@@ -185,14 +181,12 @@ where $s_{\text{logic}}$ is an LM step-checker that validates whether the new li
 $s_{\text{syntax}}$ checks parsability/format (e.g., code compiles, expression parses), and
 $s_{\text{constraints}}$ encodes simple domain invariants (e.g., no new free variables, signature preserved).
 If a component is unavailable we reweight the remaining terms proportionally; when $s_{\text{logic}}$ carries $\lambda_1\ge 0.7$ we tighten the promotion gate in Sec.~\ref{sec:promotion} by raising the path-consistency threshold by $+0.1$ and requiring one-step re-derivation.
-
 We aggregate consistency along a branch $i$ of length $h$ via a robust \emph{path-consistency} score
 \begin{equation}
 C_{\text{path}}(i,h)\;=\;\min\!\Big\{\operatorname{Quantile}_{q}\big(\{c_{\text{local}}(x_j)\}_{j\le h}\big),\ \overline{c}_{\text{local}}(i,h)\Big\},
 \qquad q=0.25,
 \end{equation}
 which is distribution-free and stable for short paths. (A mean$-$MAD variant appears in App.~\ref{app:robust-eval}.)
-
 Each branch $i$ maintains a tiny \emph{micro-beam} of size $m_{\mu}$ leaves at each horizon.
 We define the \emph{envelope} at horizon $h$ as a smoothed Top-$K$ mean over those leaves,
 \begin{equation}
@@ -279,7 +273,6 @@ standardize it (robust $z$ within the rung), and \emph{admit} $i$ if
 \end{equation}
 followed by a one-step \emph{repeat-to-confirm} micro-probe with independent randomization.
 We default to $\mathcal{M}_r{=}\{1,2\}$ for stability (slope or slope+curvature) and expose $m{=}3$ only in an ablation.
-
 We view $V_i$ as a function of horizon/compute and continue branch $i$ if a discrete derivative of order $m\in\{1,\dots,M\}$ is reliably positive:
 \[
 \widehat{\Delta^{(m)} V_i} \;\ge\; \text{bar}(|S_r|,M) \quad\text{with}\quad \text{bar}(|S_r|,M)\propto \sqrt{2\log(|S_r|\cdot M)}.
@@ -329,7 +322,6 @@ All promotion-time LM calls are charged to the rung budget, and we standardize $
 \label{sec:theory}
 
 We summarize the main guarantees; proofs are short and rely on standard successive-halving arguments and sub-Gaussian tail bounds for rung-wise statistics.
-
 Let $N_0$ be the initial lateral width.
 In \emph{strict} successive halving (no overflow), the per-survivor budget at rung $r$ scales like $b_0\eta^r$, and survivors are $N_0/\eta^r$, so the rung cost is $\text{Cost}_r = N_0 b_0$ (independent of $r$).
 With $R=\lceil\log_\eta N_0\rceil$ rungs, the total lateral cost is
@@ -350,7 +342,6 @@ LToT therefore keeps $W$ small and invests surplus compute in laterals, where wi
 
 Assume rung-wise improvement statistics are sub-Gaussian with scale $\sigma$ (across branches in $S_r$).
 Setting the \emph{rapid-rise} bar at $\kappa\sigma\sqrt{2\log|S_r|}+\delta$ keeps the probability that any non-improving branch exceeds the bar uniformly bounded as $|S_r|$ grows (standard max-of-sub-Gaussian tail), and a one-step \emph{repeat-to-confirm} reduces it quadratically.
-
 \emph{Beyond sub-Gaussian tails.} The result extends to heavier tails.
 Under \emph{sub-Gamma} rung-wise noise with parameters $(\nu_r,c_r)$ we set
 \begin{equation}
@@ -376,7 +367,6 @@ In practice we adopt the budget-matched policy: cap spend by $b_0\eta^r$ and all
 
 \textbf{Exploitation trigger.}
 EWMA of compute-normalized mainline progress with small patience and hysteresis; depth-banded statistics if $v$ drifts with depth.
-
 \textbf{LR-SC parameters.}
 $\eta\in\{3,4,5\}$; $b_0\in\{1,2\}$ expansions; micro-probe $b_{\text{micro}}=1$; overflow cap $\rho\in[0.1,0.2]$; width-aware bar with $\kappa\!\approx\!1.0$ and a small margin $\delta$ over the mainline bar.
 Derivative-based continuation with slope+curvature ($M{=}2$) using a short window and robust scales; optional third-order check in ablations.
@@ -400,7 +390,6 @@ We design experiments to test whether LToT resolves the concrete problems raised
 (3) \emph{noisy/nonstationary evaluators} that require sequential, uncertainty-aware allocation.
 We also validate the cost claims in Secs.~\ref{sec:lrscr}--\ref{sec:theory}:
 near-constant per-rung cost, $\Theta(\log_\eta N)$ rungs, and overall $\Theta(N\log_\eta N)$ lateral cost.
-
 We select four benchmarks that collectively stress breadth, long-horizon payoffs, and verifiable correctness.
 All tasks use \emph{exact or programmatic verification} to define the utility $v$ for promotion (Sec.~\ref{sec:promotion}).
 
@@ -490,9 +479,7 @@ We evaluate \textbf{GSM-Plus} and \textbf{HumanEval}, where breadth saturation a
 To test trend persistence toward frontier capacity, we include a third open-weight scale:
 \textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
 All hyperparameters are inherited; only the per-scale budgets differ as above.
-
 Primary metrics as in Sec.~\ref{subsec:budgets-metrics}; additionally, we report the \emph{marginal return of extra tokens} (gain in Success@1 / Pass@1 from Low$\to$Med and Med$\to$High) to quantify saturation.
-
 H\textsubscript{3}: LToT's absolute gains over ToT \emph{increase} with budget.
 H\textsubscript{4}: Gains persist at the larger (L) scale under equal compute.
 
@@ -738,7 +725,6 @@ L (70B) & 21s & \textbf{16s} \\
 \end{table}
 
 Short-circuiting reduces user-perceived latency in interactive settings, complementing the equal-compute accuracy gains reported above.
-
 Values here are \emph{forecasted} and will be replaced with measured means and confidence intervals.
 Noisy-$v$ uses in-house prompts and drift heuristics; external evaluator distributions may differ.
 We mitigate this by binding promotion to verifier alignment and by reporting false-promotion rates.
@@ -838,7 +824,6 @@ $h_3$ & (final EM hit)   & ---    & ---    & promote (EM=1) \\
 \end{tabular}
 \end{center}
 \noindent Predictive gain (deg.\ 2) standardizes to $z{=}5.0$; with $|S_r|{=}128$, $|\mathcal{M}_r|{=}2$, the bar is $3.43$; confirmation yields $z{=}4.3$; the branch admits and promotes on exact match at $h_3$.
-
 Implement \texttt{is\_palindrome(s)} (alphanumeric, case-insensitive); final verifier has 10 tests.
 $m_\mu{=}3$; exploration $v$ is fraction of 3 subset tests; promotion runs all 10 tests; same smoothing and continuation settings.
 Leaf utilities and envelopes:
