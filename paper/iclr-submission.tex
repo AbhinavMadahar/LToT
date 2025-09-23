@@ -31,21 +31,12 @@ Modern deployments increasingly budget \emph{large test-time compute}---thousand
 
 Modern language models (LMs) are increasingly deployed in \emph{compute--rich} inference regimes: users and systems budget thousands of tokens or many node expansions per query in return for reliability.
 The dominant recipe for using this budget is structured search, most commonly Tree--of--Thoughts (ToT) over partial solutions \citep{yao2023tot}, layered on top of stepwise prompting \citep{wei2022cot,wang2022selfconsistency,kojima2022zeroshotcot}.
-In this regime two failure modes grow worse as budgets grow:
-(i) \emph{utility saturation}—breadth collapses as near--duplicates absorb extra samples; and
-(ii) \emph{depth myopia}—noisy early utility estimates prune branches that are logically consistent but need a few more steps to pay off.
-Together they leave compute idle or misallocated, especially on long--horizon math, code, and search puzzles.
 
 We argue that inference--time controllers should treat \emph{logically consistent, low--utility} candidates as assets, not waste.
 The architectural move is to separate \emph{consistency/continuability} from \emph{utility}, and to invest cheap budget into short \emph{predictive continuations} of many consistent branches until a small number of them demonstrate sustained marginal improvement.
 This idea echoes ``lateral thinking'' \citep{debono1967lateral}: rather than deepening a few promising threads, maintain wide, low--commitment exploration that can be \emph{promoted} the instant it proves itself.
 
 We introduce \textbf{Lateral Tree--of--Thoughts (LToT)}, a drop--in search--time controller that operationalizes the thesis above.
-LToT maintains a \emph{dual--score frontier}: high--$v$ \emph{mainlines} that drive exploitation, and a large pool of high--consistency but low--$v$ \emph{laterals} that are explored by a budgeted racing procedure.
-The racing core, \textbf{LR--SC} (lateral racing with short--circuit), allocates \emph{micro--budgets} to laterals in successive rungs, using robust, \emph{order--aware} improvement statistics (slope/curvature of a branch envelope) and a \emph{width--aware} bar with a cheap \emph{repeat--to--confirm} to control multiplicity.
-When any lateral's envelope clears the \emph{mainline bar}, LR--SC \emph{short--circuits} back to exploitation and promotes that branch.
-Mainlines are deliberately kept narrow (beam/quota caps) to avoid exponential depth blow--up; surplus compute is funneled into the cheap, wide lateral race.
-Promotion is bound to verifier--aligned outcomes (exact match or tests on math/code) and uses a dual plausibility/consistency gate on open--ended QA \citep{cobbe2021verifiers}.
 
 The design converts extra tokens into \emph{principled diversity} where it is cheapest: lateral width.
 A simple cost law shows that LR--SC's lateral spend is $\Theta(N\log N)$ in initial width $N$ (constant cost per rung and $O(\log N)$ rungs), while mainlines would grow exponentially with depth if left uncapped.
@@ -67,6 +58,7 @@ Sec.~\ref{section:motivation} formalizes the saturation/myopia tension.
 Sec.~\ref{section:architecture-design} instantiates LToT: the dual--score frontier, LR--SC, and promotion discipline.
 Sec.~\ref{section:experiments} describes benchmarks and protocols; Sec.~\ref{section:results} reports results and ablations.
 Appendices provide evaluator details, heavy--tail bars, and worked traces.
+
 \section{Motivation}
 \label{section:motivation}
 Frontier language models increasingly run in \emph{compute-rich} inference settings:
