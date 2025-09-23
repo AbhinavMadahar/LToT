@@ -1,0 +1,15 @@
+#cloud-config
+runcmd:
+  - bash -lc 'set -euxo pipefail
+    sudo apt-get update -y
+    pip install -U pip "vllm>=0.6" transformers accelerate datasets boto3
+    # Replace model id with your AWQ-quantized Mixtral if different
+    nohup vllm serve mistralai/Mixtral-8x7B-Instruct-v0.1-AWQ \
+      --quantization awq \
+      --max-model-len 8192 \
+      --gpu-memory-utilization 0.95 \
+      --enable-chunked-prefill --enable-prefix-caching \
+      --max-num-batched-tokens 32768 \
+      --port 8200 > /var/log/vllm_mixtral.log 2>&1 &
+    mkdir -p /opt/ltot/out
+  '

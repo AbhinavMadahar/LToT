@@ -1,0 +1,40 @@
+#cloud-config
+runcmd:
+  - bash -lc 'set -euxo pipefail
+    sudo apt-get update -y
+    pip install -U pip "vllm>=0.6" transformers accelerate datasets boto3
+    # Optional: Hugging Face auth (export HF_TOKEN in instance env or bake into AMI if needed)
+    if [ -n "${HF_TOKEN:-}" ]; then huggingface-cli login --token "$HF_TOKEN" --add-to-git-credential; fi
+
+    # Start vLLM 70B (4 GPUs / tensor parallel)
+    nohup vllm serve meta-llama/Meta-Llama-3.1-70B-Instruct \
+      --tensor-parallel-size 4 \
+      --max-model-len 8192 \
+      --gpu-memory-utilization 0.90 \
+      --enable-chunked-prefill --enable-prefix-caching \
+      --max-num-batched-tokens 32768 \
+      --port 8000 > /var/log/vllm_70b.log 2>&1 &
+
+    # Minimal Spot interruption guard (AWS 2-minute signal)
+    cat >/usr/local/bin/spot-guard.sh <<EOS
+#!/usr/bin/env bash
+set -euo pipefail
+META=http://169.254.169.254/latest/meta-data/spot/instance-action
+while true; do
+  if timeout 1 curl -fsS "$META" >/tmp/instance-action.json 2>/dev/null; then
+    echo "[guard] spot reclaim notice: $(cat /tmp/instance-action.json)" | tee -a /var/log/spot-guard.log
+    mkdir -p /opt/ltot/out
+    # Sync any local run state to S3 (set AWS CLI default bucket via env or replace below)
+    if [ -n "${LTOT_S3_PREFIX:-}" ]; then aws s3 sync /opt/ltot/out "$LTOT_S3_PREFIX/$(hostname)/" --exclude "*" --include "*.json" --include "*.ndjson" --include "*.csv" || true; fi
+    pkill -TERM -f "vllm serve" || true
+    sleep 25
+    exit 0
+  fi
+  sleep 5
+done
+EOS
+    chmod +x /usr/local/bin/spot-guard.sh
+    nohup /usr/local/bin/spot-guard.sh >/var/log/spot-guard.log 2>&1 &
+
+    mkdir -p /opt/ltot/out
+  '
