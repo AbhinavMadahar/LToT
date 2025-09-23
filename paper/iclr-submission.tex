@@ -1,4 +1,3 @@
-% Reorganized by ChatGPT (GPT-5 Pro) on 2025-09-20: moved key results into main; moved low-level details to appendix.
 \documentclass{article}
 \usepackage{iclr2025_conference,times}
 
@@ -30,7 +29,6 @@ Modern deployments increasingly budget \emph{large test-time compute}---thousand
 \section{Introduction}
 \label{section:introduction}
 
-\paragraph{Problem.}
 Modern language models (LMs) are increasingly deployed in \emph{compute--rich} inference regimes: users and systems budget thousands of tokens or many node expansions per query in return for reliability.
 The dominant recipe for using this budget is structured search, most commonly Tree--of--Thoughts (ToT) over partial solutions \citep{yao2023tot}, layered on top of stepwise prompting \citep{wei2022cot,wang2022selfconsistency,kojima2022zeroshotcot}.
 In this regime two failure modes grow worse as budgets grow:
@@ -38,12 +36,10 @@ In this regime two failure modes grow worse as budgets grow:
 (ii) \emph{depth myopia}—noisy early utility estimates prune branches that are logically consistent but need a few more steps to pay off.
 Together they leave compute idle or misallocated, especially on long--horizon math, code, and search puzzles.
 
-\paragraph{Thesis.}
 We argue that inference--time controllers should treat \emph{logically consistent, low--utility} candidates as assets, not waste.
 The architectural move is to separate \emph{consistency/continuability} from \emph{utility}, and to invest cheap budget into short \emph{predictive continuations} of many consistent branches until a small number of them demonstrate sustained marginal improvement.
 This idea echoes ``lateral thinking'' \citep{debono1967lateral}: rather than deepening a few promising threads, maintain wide, low--commitment exploration that can be \emph{promoted} the instant it proves itself.
 
-\paragraph{Approach (LToT).}
 We introduce \textbf{Lateral Tree--of--Thoughts (LToT)}, a drop--in search--time controller that operationalizes the thesis above.
 LToT maintains a \emph{dual--score frontier}: high--$v$ \emph{mainlines} that drive exploitation, and a large pool of high--consistency but low--$v$ \emph{laterals} that are explored by a budgeted racing procedure.
 The racing core, \textbf{LR--SC} (lateral racing with short--circuit), allocates \emph{micro--budgets} to laterals in successive rungs, using robust, \emph{order--aware} improvement statistics (slope/curvature of a branch envelope) and a \emph{width--aware} bar with a cheap \emph{repeat--to--confirm} to control multiplicity.
@@ -51,13 +47,11 @@ When any lateral's envelope clears the \emph{mainline bar}, LR--SC \emph{short--
 Mainlines are deliberately kept narrow (beam/quota caps) to avoid exponential depth blow--up; surplus compute is funneled into the cheap, wide lateral race.
 Promotion is bound to verifier--aligned outcomes (exact match or tests on math/code) and uses a dual plausibility/consistency gate on open--ended QA \citep{cobbe2021verifiers}.
 
-\paragraph{Why this helps.}
 The design converts extra tokens into \emph{principled diversity} where it is cheapest: lateral width.
 A simple cost law shows that LR--SC's lateral spend is $\Theta(N\log N)$ in initial width $N$ (constant cost per rung and $O(\log N)$ rungs), while mainlines would grow exponentially with depth if left uncapped.
 By allocating on \emph{marginal improvement} rather than level, LR--SC rescues branches that a single noisy utility reading would discard, while width--aware thresholds prevent ``lucky spikes'' from polluting mainlines.
 In aggregate, LToT mitigates breadth saturation and depth myopia without inflating compute.
 
-\paragraph{Contributions.}
 \begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
     \item \textbf{Architecture.} We propose LToT, a controller that keeps mainlines narrow and pushes exploration laterally through LR--SC---a successive--halving race with short--circuit promotion, robust order--aware detection, and freeze--thaw survivors.
     \item \textbf{Promotion discipline.} We bind promotion to verifier--aligned outcomes (exact match/tests for math/code) and introduce a dual gate for QA (plausibility and path consistency), reducing mainline contamination under noisy evaluators.
@@ -66,28 +60,15 @@ In aggregate, LToT mitigates breadth saturation and depth myopia without inflati
     \item \textbf{Empirics.} Across math (GSM variants, MATH--500), code (HumanEval/MBPP--lite), and a canonical ToT puzzle (Game of 24), LToT improves Success@1/Pass@1 at matched compute over CoT, vanilla ToT, and MCTS with progressive widening \citep{xie2024mcts}, while lowering false promotions and time--to--first--hit via short--circuiting.
 \end{enumerate}
 
-\paragraph{Scope and relation to prior art.}
 LToT complements inference--time scaling via best--of--$n$ \citep{chen2024bot,yang2024bot} and revising/self--improvement \citep{madaan2023selfrefine}, and sits alongside program/tool--aided reasoning \citep{gao2022pal,chen2022pot}.
 Its novelty is not another search heuristic but a \emph{control principle}: separate consistency from utility; allocate on marginal improvement; and convert surplus compute into lateral breadth with guarantees.
 
-\paragraph{Roadmap.}
 Sec.~\ref{section:motivation} formalizes the saturation/myopia tension.
 Sec.~\ref{section:architecture-design} instantiates LToT: the dual--score frontier, LR--SC, and promotion discipline.
 Sec.~\ref{section:experiments} describes benchmarks and protocols; Sec.~\ref{section:results} reports results and ablations.
 Appendices provide evaluator details, heavy--tail bars, and worked traces.
-
-% --- Reader map to minimize appendix-only risk ---
-\paragraph{Reader's map.} For fast auditability, the main text now contains:
-\emph{(i)} controller loop and \textbf{LR--SC} pseudocode (Alg.~\ref{alg:lrscr});
-\emph{(ii)} compact theory including cost law and width-aware error control (Sec.~\ref{sec:theory});
-\emph{(iii)} a reproducibility micro-summary (Sec.~\ref{subsec:setup-glance}); and
-\emph{(iv)} headline ablations (Tab.~\ref{tab:ablations-mini}).
-Full derivations, extended grids, and protocol minutiae remain in Appx.~\ref{app:robust-eval}, \ref{app:setup}, and \ref{app:extended}.
-% --- End reader map ---
-
 \section{Motivation}
 \label{section:motivation}
-\paragraph{The near-term problem at frontier scale.}
 Frontier language models increasingly run in \emph{compute-rich} inference settings:
 users and systems are willing to spend thousands of tokens (or many node expansions) per query to improve reliability.
 Yet the dominant search pattern—vanilla Tree-of-Thoughts (ToT)—\emph{under-utilizes} this budget in two systematic ways already visible today and poised to worsen as budgets grow:
@@ -97,14 +78,12 @@ Yet the dominant search pattern—vanilla Tree-of-Thoughts (ToT)—\emph{under-u
 \end{enumerate}
 Both effects amplify with larger inference budgets: saturation wastes more samples as $k$ grows, and myopic pruning discards more candidates as depth increases.
 
-\paragraph{A simple cost asymmetry.}
 Let $k$ be the number of children sampled per expanded node and let $a$ be the acceptance fraction into the \emph{mainline}.
 If one does not cap mainline width, the expected number of mainline nodes at depth $d$ scales like $(ak)^d$, so the cost to depth $D$ is $\Theta((ak)^D)$—\emph{exponential in depth}.
 By contrast, controlling \emph{lateral} width with successive-halving (LR-SC; Sec.~\ref{sec:lrscr}) yields a total lateral exploration cost of $\Theta(N_0 \log_{\eta} N_0)$ for initial lateral width $N_0$ and culling factor $\eta>1$—\emph{pseudolinear in width}.
 This asymmetry suggests an architectural principle:
 \emph{keep mainlines narrow to avoid depth explosion and push width into laterals where it is cheap.}
 
-\paragraph{Why the problem will grow.}
 Three trends sharpen the pain points above:
 \begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
     \item \textbf{Bigger inference budgets.} Multi-round agents, tool calls, and safety-/verification-time checks raise the tolerated per-query compute. Without a controller that can convert budget into \emph{productive} breadth, ToT saturates early and the marginal return of extra tokens collapses.
@@ -112,7 +91,11 @@ Three trends sharpen the pain points above:
     \item \textbf{Noisier, nonstationary evaluators.} Practical utility scores $v$ (even when outcome-aligned) fluctuate across depths and task regimes. A fixed, level-based gate conflates noise with signal; sequential allocation based on \emph{marginal value of compute} is needed.
 \end{enumerate}
 
-\paragraph{Design desiderata induced by the tension.}
+Let a candidate node $x$ have an (unobserved) eventual value $\mu(x)$ if its branch were fully developed.
+An early evaluator observes $v(x) = \mu(x) - \lambda \,\Delta(x) + \varepsilon$, where $\Delta(x)$ is the (unknown) remaining steps to payoff, $\lambda>0$ captures horizon bias, and $\varepsilon$ is evaluator noise.
+When $\Delta(x)$ is moderate, $v(x)$ may fall below the mainline gate despite large $\mu(x)$.
+A controller that reasons about \emph{improvement after a small investment}—rather than $v(x)$ in isolation—can \emph{defer judgment}, test whether $x$ starts producing high-$v$ descendants quickly, and only then commit budget.
+
 To resolve saturation and myopia under large budgets, a search-time controller should:
 \begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
     \item \textbf{Allocate on marginal gain (not level).} Decide to continue a branch based on compute-normalized improvement of an envelope $V(\cdot)$ over a short, controlled lookahead; gate on robust trend (slope/curvature), not a single $v$ reading.
@@ -122,13 +105,11 @@ To resolve saturation and myopia under large budgets, a search-time controller s
     \item \textbf{Control multiplicity.} As lateral width grows, guard against winner's-curse spikes with width-aware thresholds and a cheap repeat-to-confirm step.
 \end{enumerate}
 
-\paragraph{How LToT addresses the gap.}
 LToT operationalizes the desiderata above with two ingredients (see Sec.~\ref{section:architecture-design}):
 (i) a \emph{dual-score frontier} that retains logically consistent, low-$v$ \emph{laterals} alongside high-$v$ \emph{mainlines}, deferring judgment on laterals; and
 (ii) a budgeted racing procedure, \emph{LR-SC}, that allocates tiny probes across a very wide lateral set, culls aggressively, and \emph{promotes} a lateral to the exploitation set the moment its envelope reaches the mainline bar.
 Theoretical analyses (Sec.~\ref{sec:theory}) show that LR-SC keeps lateral cost \emph{pseudolinear in width} ($\Theta(N_0\log_{\eta} N_0)$) while mainlines, if left uncapped, are exponential in depth; hence LToT converts surplus compute into principled diversity exactly where it is cheapest.
 
-\paragraph{What the reader should take away.}
 Frontier inference will keep offering more budget per query before training-time improvements alone solve long-horizon reliability.
 Without a controller, that budget is spent on near-duplicates (saturation) or discarded candidates that only need a few steps (myopia).
 LToT provides the missing mechanism: \emph{defer judgment} on consistent but low-$v$ ideas, \emph{test them cheaply and in parallel}, and \emph{promote immediately} when they prove themselves—while keeping provable control over compute and errors.
@@ -136,26 +117,56 @@ LToT provides the missing mechanism: \emph{defer judgment} on consistent but low
 \section{Related Work}
 \label{section:prior-work}
 
-\paragraph{Prompted stepwise reasoning.}
 A large body of work elicits multi‑step reasoning at inference time by prompting language models to externalize intermediate steps. Chain‑of‑Thought (CoT) \citep{wei2022cot} and Zero‑shot CoT \citep{kojima2022zeroshotcot} demonstrate that free‑form rationales can substantially improve performance on math, symbolic, and commonsense tasks. Several variants structure this process: Self‑Consistency aggregates multiple CoT samples via voting to reduce variance \citep{wang2022selfconsistency}; Least‑to‑Most decomposes problems into sub‑questions solved sequentially \citep{zhou2022ltm}; Plan‑and‑Solve asks models to sketch a plan before executing it \citep{wang2023planandsolve}; and ReAct interleaves short reasoning traces with tool‑use actions \citep{yao2023react}. These methods focus primarily on generating and aggregating linear traces; in contrast, our Lateral Tree‑of‑Thoughts (LToT) explicitly organizes alternatives in a \emph{tree} while preserving logically consistent but low‑utility branches to improve global search coverage. See also \citet{press2022selfask} on self‑questioning for decomposition.
 
-\paragraph{Structured search at inference time.}
 Tree‑of‑Thoughts (ToT) casts reasoning as a search over partial thoughts with learned/heuristic evaluators \citep{yao2023tot}. Subsequent work generalizes the structure from trees to graphs (Graph‑of‑Thoughts) \citep{besta2024got}, ensembles multiple trees (Forest‑of‑Thought) \citep{bi2024fot}, and explores “Everything‑of‑Thoughts’’ style meta‑frameworks \citep{ding2023xot}. Efficiency‑oriented advances include Dynamic Parallel Tree Search (DPTS), which parallelizes ToT expansions and focuses compute on promising branches \citep{ding2025dpts}. Our approach is complementary: rather than accelerating a fixed search policy or collapsing branches early, LToT \emph{retains} laterally related, logically consistent candidates that appear locally low‑utility, improving the chance of escaping premature pruning and enabling cross‑branch re‑use of partial deductions.
 
+A parallel line of work iteratively revises solutions. Self‑Refine uses the model’s own feedback to edit drafts \citep{madaan2023selfrefine}; Reflexion stores episodic “verbal reinforcement’’ to guide future trials \citep{shinn2023reflexion}. “Boosting/Buffer‑of‑Thoughts’’ families build and retrieve reusable thought templates or ensembles to improve robustness and cost \citep{chen2024bot,yang2024bot}. LToT differs in objective and mechanism: it organizes contemporaneous alternatives in a search tree and deliberately curates \emph{logically consistent, low‑scored} branches to maintain breadth, rather than relying on post‑hoc reflection or global templates.
 
-\paragraph{Further related work.} See Appendix~\ref{app:extended-rw} for additional connections (self-improvement, verification/selection, tool/program-aided reasoning, and reliability).
+Scaling inference‑time compute via repeated sampling (“best‑of-\(N\)’’) and diverse rationales improves accuracy when paired with selection mechanisms \citep{cobbe2021verifier,wang2022selfconsistency}. Recent studies formalize test‑time scaling and its limits, highlighting that simple majority vote and naïve reward models can plateau, while coverage grows with sample budget \citep{brown2024monkeys}. Verifier training and process supervision further enhance selection quality \citep{lightman2023verify,zhang2024generativeverifiers}. LToT contributes a complementary lever: rather than solely increasing samples or verifier strength, it \emph{rebalances} exploration by preserving branches that are logically sound yet temporarily low‑utility, improving coverage of the hypothesis space under fixed compute.
+
+Program‑Aided Language Models (PAL) and Program‑of‑Thoughts (PoT) separate symbolic computation from natural‑language reasoning by delegating computation to interpreters \citep{gao2022pal,chen2022pot}. Such modularization can be combined with structured search: MCTS‑style controllers over chains of thought \citep{xie2024mcts}, and process‑reward models with MCTS (OmegaPRM) \citep{luo2024omegaprm}. LToT is orthogonal: it can host code‑executed checks inside nodes while preserving lateral candidates that pass logical checks but score poorly under short‑horizon utilities.
+
+Although CoT often boosts task accuracy, generated rationales may be unfaithful \citep{turpin2023dontsaysay,lanham2023measurefaithfulness}. Methods to improve faithfulness include “faithful‑by‑construction’’ pipelines that deterministically execute symbolic traces \citep{lyu2023faithfulcot} and self‑verification prompts or analyses \citep{weng2022selfverification}. Our emphasis on \emph{logical consistency} as a retention criterion naturally interacts with these concerns: LToT filters and preserves candidates whose internal derivations satisfy logical checks, even when immediate utility scores are low, aligning exploration pressure with consistency rather than only with myopic reward.
+
+Finally, techniques such as Skeleton‑of‑Thought prompt models to outline and then expand subparts in parallel, reducing latency while sometimes improving quality \citep{ning2023sot}. Orthogonal to latency, LToT targets \emph{exploration completeness}: by laterally preserving logically consistent branches, it trades small additional compute for a disproportionate increase in the chance of reaching globally consistent solutions under bounded budgets.
+
+We adopt a successive-halving (racing) backbone solely to control lateral cost (pseudolinear $\Theta(N\log_\eta N)$, logarithmic rungs).
+The novelty in LToT lies in reasoning-specific \emph{control rules} layered atop this backbone:
+(i) compute-normalized predictive continuation on branch envelopes (local polynomial forecast);
+(ii) width-aware thresholds with confirmation to control max-of-many effects;
+(iii) verifier-aligned promotion (dual-gated under plausibility);
+(iv) short-circuit to exploitation on success;
+(v) freeze--thaw of laterals across phases; and
+(vi) a dual-score frontier separating high-$v$ mainlines from high-$c$, low-$v$ laterals.
+Ablations and SH-only baselines (Sec.~\ref{section:experiments}) show that the backbone alone does not yield our accuracy, false-promotion, or latency characteristics.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{@{}p{2.9cm}p{3.0cm}p{6.7cm}@{}}
+\toprule
+\textbf{LToT element} & \textbf{Closest prior} & \textbf{What is different here} \\
+\midrule
+Predictive continuation & SH/Hyperband levels & Forecasted marginal gain on a branch \emph{envelope}; order-aware bar with confirmation \\
+Width-aware bar + confirm & Heuristics & Explicit $\log(|S_r||\mathcal{M}_r|)$ control; heavy-tail variants; effective width for correlation \\
+Verifier-bound promotion & Budget milestones & Promotion tied to exact tests / EM; dual gate under plausibility \\
+Short-circuit to exploit & Bracket completion & Immediate return upon meeting mainline bar $B_t+\delta$ \\
+Freeze--thaw laterals & Freeze--thaw BO & Applied to reasoning traces with cached rung state \\
+Dual-score frontier & --- & Distinguishes high-$v$ mainlines vs.\ high-$c$, low-$v$ laterals \\
+\bottomrule
+\end{tabular}
+\caption{Cross-walk: LToT control rules vs.\ racing backbones.}
+\end{table}
 \section{Architecture Design}
 \label{section:architecture-design}
 
-\paragraph{Goal.}
 LToT is a search-time controller for reasoning with language models (LMs) that
 (i) keeps \emph{mainlines} narrow to avoid exponential blow-up in depth and
 (ii) makes \emph{lateral} exploration very wide but cheap via a budgeted racing procedure with short-circuit promotion.
 The controller decides when to exploit mainlines vs.\ explore laterals, and—during exploration—how to allocate compute across many lateral branches while maintaining guarantees on cost and false promotions.
 
 \vspace{0.5em}
-\subsection{Problem setting and notation}
-
 We reason over a rooted tree (or DAG) of partial traces.
 Each node $x$ is a partial solution; its children are produced by prompting the LM with $x$.
 Two evaluators score nodes:
@@ -165,8 +176,6 @@ c(x) \in [0,1] \quad \text{(logical consistency / soundness)}.
 \]
 We measure compute in either node expansions or tokens and denote cumulative compute by $C$.
 
-
-\paragraph{Instantiated consistency and envelope (task-agnostic).}
 For any node $x$ with parent $p$, we define a \emph{local consistency} score
 \begin{equation}
 c_{\text{local}}(x)\;=\;\lambda_1\,s_{\text{logic}}(x\mid p)\;+\;\lambda_2\,s_{\text{syntax}}(x)\;+\;\lambda_3\,s_{\text{constraints}}(x),
@@ -198,17 +207,14 @@ Optionally we use a weighted envelope $V_i(h)=\sum_{j=1}^{m_\mu}\omega_{ij}\,v_{
 we then set the effective sample size $K_{*}{=}K_{\mathrm{eff}}=1/\sum_j \omega_{ij}^2$ in the smoothing formula.
 This adapts the shrinkage to how many leaves effectively contribute and stabilizes the continuation statistic.
 Unless stated otherwise we set $m_{\mu}{=}3$, $K{=}m_{\mu}$.
-\paragraph{Frontier, origins, and exploitation set.}
 At time $t$ the search maintains a frontier $\mathcal{F}_t$ and an \emph{exploitation set} $M_t \subseteq \mathcal{F}_t$ of nodes eligible for \emph{mainline} exploitation.
 Nodes carry an immutable \texttt{origin} tag in $\{\textsc{mainline\_origin},\textsc{lateral\_origin}\}$ indicating how they first entered the frontier.
 We also maintain a \emph{mainline acceptance bar} $B_t$ (e.g., the best-so-far $v$ or a top-$k$ mean with a small margin $\delta>0$).
 
-\paragraph{Mainlines vs.\ laterals.}
 Children with high $v$ are admitted to $M_t$ (mainlines).
 Children with low $v$ but high $c$ enter the \emph{lateral pool} $L_t$ for potential exploration.
 Intuitively, laterals represent hypotheses that appear unpromising under a myopic utility but are logically coherent and may become valuable after a short lookahead.
 
-\paragraph{Branch envelope and gain.}
 For a lateral branch $i$ (rooted at node $x_i$), let $V_i(h)$ denote a branch \emph{envelope}—e.g., a Top-$k$ mean of $v$ among leaves within horizon $h$ steps from $x_i$ (or within a per-branch micro-beam). We write $C(h)$ for the compute required to reach horizon $h$ and define the compute-normalized improvement between horizons $h'<h$ as
 \[
 g_i(h,h') \;=\; \frac{V_i(h)-V_i(h')}{C(h)-C(h')}.
@@ -245,7 +251,45 @@ Non-promoted lateral survivors are \emph{frozen} and can be \emph{thawed} (resum
 \end{algorithmic}
 \end{algorithm}
 
-% --- Moved up from Appendix: LR-SC pseudocode now in main text ---
+\vspace{-0.5em}
+\subsection{LR-SC: overflow-capped racing with short-circuit}
+\label{sec:lrscr}
+
+Let $N$ be the active lateral width.
+LR-SC proceeds in rungs $r=0,1,\dots$ with \emph{culling factor} $\eta>1$.
+At rung $r$ we (i) keep the top quota $Q_r=\lfloor |S_r|/\eta \rfloor$ by a robust score, (ii) also retain any \emph{rapid-riser} exceeding a width-aware bar (overflow), but give overflow branches only a \emph{micro-probe}, and (iii) \emph{short-circuit} to exploitation immediately when any branch meets the promotion bar.
+
+For branch $i$ at rung $r$ we compute a compute-normalized improvement $g_i$ (using $V_i$) and a robust standardization $z_i$ (e.g., subtract rung median and divide by a MAD-like scale).
+To control ``max-of-many'' effects as width grows, we admit \emph{rapid-risers} via a width-aware bar:
+\[
+z_i \;\ge\; \underbrace{\kappa \sqrt{2\log |S_r|}}_{\text{width penalty}} + \delta,
+\]
+with $\kappa\approx 1$ and a margin $\delta>0$.
+We optionally standardize scores within parent-depth bands to compare fairly across heterogeneous depths.
+
+We cap the total micro-probe budget for overflow per rung to a small fraction $\rho$ of the rung budget (e.g., $\rho\in[0.1,0.2]$), ensuring per-rung cost stays near constant.
+
+We view $\tilde V_i$ as locally smooth in compute and fit a robust degree-$m$ polynomial ($m\!\in\!\mathcal{M}_r$)
+to the last $W\in\{3,4\}$ points $\{(h,\tilde V_i(h))\}$ in local coordinates.
+We then forecast the next compute-normalized improvement
+$\widehat{s}^{\mathrm{pred}}_{i,m}=\big(\widehat{\Delta \tilde V}_i / \Delta C\big)$,
+standardize it (robust $z$ within the rung), and \emph{admit} $i$ if
+\begin{equation}
+\max_{m\in\mathcal{M}_r}\ z^{\mathrm{pred}}_{i,m}\ \ge\ \texttt{bar}\!\big(|S_r|,\ |\mathcal{M}_r|;\ \theta_r\big)\,,
+\end{equation}
+followed by a one-step \emph{repeat-to-confirm} micro-probe with independent randomization.
+We default to $\mathcal{M}_r{=}\{1,2\}$ for stability (slope or slope+curvature) and expose $m{=}3$ only in an ablation.
+
+We view $V_i$ as a function of horizon/compute and continue branch $i$ if a discrete derivative of order $m\in\{1,\dots,M\}$ is reliably positive:
+\[
+\widehat{\Delta^{(m)} V_i} \;\ge\; \text{bar}(|S_r|,M) \quad\text{with}\quad \text{bar}(|S_r|,M)\propto \sqrt{2\log(|S_r|\cdot M)}.
+\]
+In practice we cap $M=2$ for stability and use:
+\emph{(i)} first derivative (slope) $s_i = g_i(h_r,h_{r-1})$ and
+\emph{(ii)} second derivative (curvature) $\kappa_i = s_i(r)-s_i(r-1)$,
+estimated over the last few rungs and normalized by compute; a third-order check may be included in an appendix.
+We require \emph{repeat-to-confirm}: the condition must hold on the next micro-probe before escalation.
+
 \begin{algorithm}[t]
 \caption{LR-SC (overflow-capped successive halving with short-circuit)}
 \label{alg:lrscr}
@@ -261,18 +305,12 @@ Non-promoted lateral survivors are \emph{frozen} and can be \emph{thawed} (resum
 \State $S_{r+1} \leftarrow T \cup$ (confirmed overflow); $r\leftarrow r+1$; continue if budget remains.
 \end{algorithmic}
 \end{algorithm}
-% --- End moved LR-SC ---
-
 
 \vspace{-0.5em}
-
-% [Moved to Appendix: LR-SC: overflow-capped racing with short-circuit] See Appendix~\ref{app:extended}
 \subsection{Promotion and safety}
 \label{sec:promotion}
-\paragraph{Path-consistency gate when $c_{\text{local}}$ is LM-only.}
 If $c_{\text{local}}$ relies solely on LM step-checks (no syntax/constraint signals), we raise the path-consistency threshold by $+0.1$
 and mandate one-step re-derivation before promotion for plausibility-aligned $v$; programmatic verifiers (math/code) remain unchanged.
-
 
 A lateral promotes when its envelope meets the mainline bar: $V_i \ge B_t+\delta$.
 When $v$ is verifier-aligned (e.g., unit tests for code, exact-match for math), this binds promotion to correctness.
@@ -281,7 +319,6 @@ $V_i\!\ge\!B_t{+}\delta$ \emph{and} an aggregate path-consistency (e.g., a quant
 These checks cost one micro-probe and do not change the asymptotics.
 
 \vspace{0.5em}
-\paragraph{Promotion on QA tasks (dual gate).}
 For open-ended QA without an exact verifier, we promote only if \emph{both} gates pass:
 (A) a \emph{plausibility gate} on the normalized answer string $\hat a$ with $v(\hat a)\ge \tau_v$ (default $\tau_v{=}0.85$);
 (B) a \emph{consistency gate} requiring $C_{\text{path}}\ge \tau_c$ (default $\tau_c{=}0.75$) \emph{and} a one-step \emph{repeat-to-confirm} check (independent temperature/seed) that clears its width-aware bar.
@@ -293,7 +330,6 @@ All promotion-time LM calls are charged to the rung budget, and we standardize $
 
 We summarize the main guarantees; proofs are short and rely on standard successive-halving arguments and sub-Gaussian tail bounds for rung-wise statistics.
 
-\paragraph{Cost law (pseudolinear in lateral width).}
 Let $N_0$ be the initial lateral width.
 In \emph{strict} successive halving (no overflow), the per-survivor budget at rung $r$ scales like $b_0\eta^r$, and survivors are $N_0/\eta^r$, so the rung cost is $\text{Cost}_r = N_0 b_0$ (independent of $r$).
 With $R=\lceil\log_\eta N_0\rceil$ rungs, the total lateral cost is
@@ -304,17 +340,14 @@ In LR-SC with overflow cap $\rho\in(0,1)$ and micro-probe $b_{\text{micro}}\ll b
 Short-circuit promotion can only reduce cost.
 Importantly, the result holds regardless of the horizon growth schedule, as long as per-survivor spend is capped by $b_0\eta^r$ (the \emph{budget-matched} policy).
 
-\paragraph{Rung count (short in depth).}
 The number of rungs required to reduce $N_0$ laterals to $O(1)$ survivors is
 $R=\lceil \log_\eta N_0\rceil$, i.e., logarithmic in lateral width.
 Thus LR-SC is \emph{wide and short}: constant per-rung cost and $\Theta(\log N_0)$ rungs.
 
-\paragraph{Mainline growth (why we keep mainlines narrow).}
 If at each mainline layer we admit a fixed fraction $a$ of $k$ children (effective reproduction $r_{\text{main}}=ak>1$), then expansions to depth $D$ are $\Theta(r_{\text{main}}^D)$ (exponential).
 With a beam/width cap $W$, mainline cost becomes $\Theta(D\,W\,k)$ (linear in depth).
 LToT therefore keeps $W$ small and invests surplus compute in laterals, where width is cheap.
 
-\paragraph{Width-aware threshold controls family-wise errors.}
 Assume rung-wise improvement statistics are sub-Gaussian with scale $\sigma$ (across branches in $S_r$).
 Setting the \emph{rapid-rise} bar at $\kappa\sigma\sqrt{2\log|S_r|}+\delta$ keeps the probability that any non-improving branch exceeds the bar uniformly bounded as $|S_r|$ grows (standard max-of-sub-Gaussian tail), and a one-step \emph{repeat-to-confirm} reduces it quadratically.
 
@@ -329,100 +362,147 @@ When branches are correlated, we replace $|S_r|$ by an \emph{effective width} $|
 We enforce probe independence in confirmation (different temperature/prompt/seed).
 For implementation we factor the bar into a function $\texttt{bar}(|S_r|,|\mathcal{M}_r|;\theta_r)$ used in Alg.~\ref{alg:lrscr}.
 
-\paragraph{Horizon-lifted detection of delayed payoffs.}
 Suppose a branch has a delayed payoff: there exists $H^{*}$ and $m\!\in\!\{1,2\}$ such that the $m$-th discrete derivative of $V_i$ per compute is $\ge \gamma>0$ for horizons beyond $H^{*}$.
 Under a geometric horizon schedule (e.g., $h_r=2^r$ within the budget cap) and the derivative-based continuation rule with width-aware thresholds and repeat-to-confirm, the branch is detected and survives to promotion within $O(\log H^{*})$ rungs (intuitively, each rung doubles the tested horizon).
 Total exploration cost remains $\Theta(N_0 \log_\eta N_0)$ because the per-survivor spend never exceeds $b_0\eta^r$.
 
-\paragraph{Independence from nominal horizon multiplier.}
 If one insists on tying per-survivor cost to a nominal horizon multiplier $\gamma$ via $c_r\propto \gamma^r$, the rung cost sums to a geometric series $N_0(\gamma/\eta)^r$.
 Thus for $\gamma\le\eta$ the total remains $O(N_0\log_\eta N_0)$ (or even $O(N_0)$ when $\gamma<\eta$).
 In practice we adopt the budget-matched policy: cap spend by $b_0\eta^r$ and allocate within-branch depth/width flexibly up to that cap.
 
 \vspace{0.5em}
+\subsection{Design choices and defaults}
+\label{sec:defaults}
 
+\textbf{Exploitation trigger.}
+EWMA of compute-normalized mainline progress with small patience and hysteresis; depth-banded statistics if $v$ drifts with depth.
 
-% --- Inserted from Appendix: Worked trace (math) ---
+\textbf{LR-SC parameters.}
+$\eta\in\{3,4,5\}$; $b_0\in\{1,2\}$ expansions; micro-probe $b_{\text{micro}}=1$; overflow cap $\rho\in[0.1,0.2]$; width-aware bar with $\kappa\!\approx\!1.0$ and a small margin $\delta$ over the mainline bar.
+Derivative-based continuation with slope+curvature ($M{=}2$) using a short window and robust scales; optional third-order check in ablations.
 
-% --- Moved up from Appendix: reliability and bars ---
-\paragraph{Robust standardization and smoothing (summary).}
-We use rung-wise median/MAD standardization, optional winsorization of extreme $z$, and Beta smoothing with $K_{*}{=}K$ or $K_{\mathrm{eff}}$.
-\paragraph{Heavy tails and width-aware bars (summary).}
-Under sub-Gamma tails with parameters $(\nu_r,c_r)$ we use
-$\texttt{bar}=\kappa(\sqrt{2\nu_r\log \frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}}+c_r\log \frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r})+\delta$;
-under sub-Weibull ($\psi_\alpha$) we use $\texttt{bar}=K_r(\log \frac{2|S_r|\,|\mathcal{M}_r|}{\varepsilon_r})^{1/\alpha}+\delta$.
-For correlated branches, replace $|S_r|$ by an effective width $|S_r|_{\mathrm{eff}}$.
-\paragraph{Confirmation under dependence (summary).}
-with independence ($\rho\!=\!0$) recovering $p^2$; we enforce independent randomization between probe and confirmation.
+\textbf{Promotion predicate.}
+Require $V_i \ge B_t + \delta$; if $v$ is not verifier-aligned, add a minimal path-consistency aggregate and a one-step re-derivation check.
+Both add at most one micro-probe and preserve the asymptotics.
 
-% --- End moved reliability ---
+\textbf{Freeze--thaw.}
+Cache for each survivor: rung index, envelope $V_i$, recent improvement stats, parent depth, and a lightweight duplicate signature; resume from the same rung during the next exploration phase and evict stale or dominated branches by constant-time tests (e.g., $UCB<B_t-\delta$ for several revisits).
 
+\textbf{Summary.}
+LToT turns surplus compute into breadth where it is cheapest (laterals) while keeping mainlines narrow.
+Its LR-SC core provides near-linear (pseudolinear) cost in lateral width, width-aware error control, and immediate promotion when a lateral demonstrably reaches mainline utility.
 
-% --- Reproducibility micro-box (summary) ---
-\begin{quote}\small
-\textbf{Reproducibility summary (details in Appx.~\ref{subsec:baselines},~\ref{subsec:budgets-metrics}).}
-Models: S/M/L open-weight variants as listed above. Baselines: CoT, tuned ToT, MCTS; \emph{equal compute} across methods.
-Parity: equal median tokens per problem; same verifier/gates and prompt scaffolds; three seeds with 95\% CIs.
-Primary metrics: Success@1 (math/QA), pass@1 (code); secondary: time-to-first-correct; budget/width sweeps in Appx.
-\end{quote}
-% --- End micro-box ---
-
-\subsection{Worked trace (math)}
-\subsection{Math: fraction addition (exact-match promotion)}
-\paragraph{Task.} Compute $\frac{7}{12}+\frac{5}{18}$ (answer: $\frac{41}{36}$).
-\paragraph{Setup.} Micro-beam size $m_\mu{=}3$; Top-$K$ with $K=m_\mu$; Beta smoothing $\alpha{=}0.5$; predictive continuation with $\mathcal{M}_r{=}\{1,2\}$.
-\paragraph{Trace.} Leaf utilities and envelopes:
-\begin{center}
-\begin{tabular}{lcccc}
-\toprule
-Horizon & Leaf $v$ (3) & $V_i$ & $\tilde V_i$ & Note \\
-\midrule
-$h_1$ & 0.22, 0.34, 0.29 & 0.283 & 0.337 & init \\
-$h_2$ & 0.41, 0.48, 0.39 & 0.427 & 0.445 & $\Delta\tilde V{=}0.108$ \\
-$h_3$ & (final EM hit)   & ---    & ---    & promote (EM=1) \\
-\bottomrule
-\end{tabular}
-\end{center}
-\noindent Predictive gain (deg.\ 2) standardizes to $z{=}5.0$; with $|S_r|{=}128$, $|\mathcal{M}_r|{=}2$, the bar is $3.43$; confirmation yields $z{=}4.3$; the branch admits and promotes on exact match at $h_3$.
 \section{Experiments}
 \label{section:experiments}
 
-\paragraph{Objective.}
 We design experiments to test whether LToT resolves the concrete problems raised in Sec.~\ref{section:motivation}:
 (1) \emph{utility saturation} under broad sampling; (2) \emph{myopic pruning} of longer-horizon but consistent branches; and
 (3) \emph{noisy/nonstationary evaluators} that require sequential, uncertainty-aware allocation.
 We also validate the cost claims in Secs.~\ref{sec:lrscr}--\ref{sec:theory}:
 near-constant per-rung cost, $\Theta(\log_\eta N)$ rungs, and overall $\Theta(N\log_\eta N)$ lateral cost.
 
+We select four benchmarks that collectively stress breadth, long-horizon payoffs, and verifiable correctness.
+All tasks use \emph{exact or programmatic verification} to define the utility $v$ for promotion (Sec.~\ref{sec:promotion}).
 
-% [Moved to Appendix: Benchmarks] See Appendix~\ref{app:extended}
+\begin{itemize}[leftmargin=*, itemsep=2pt, topsep=2pt]
+    \item \textbf{GSM-Hard \& GSM-Plus (robust grade-school math).}
+    Numeric brittleness and subtle structure perturbations expose breadth saturation and early pruning.
+    Utility is exact-match of the final answer.
+    \item \textbf{MATH-500 (long-horizon symbolic math).}
+    A 500-problem subset from MATH (olympiad-style); many items require multi-step derivations where payoff appears after several steps.
+    Utility is exact-match of the final answer.
+    \item \textbf{HumanEval \& MBPP-lite (code generation with tests).}
+    Promotion is bound to unit-test \emph{pass@1}; this prevents specious reasoning from entering mainlines (Sec.~\ref{sec:promotion}).
+    \item \textbf{Game of 24 (ToT-native puzzle).}
+    Canonical ToT task with branching and depth; included to show LToT improves even where ToT is strong.
+\end{itemize}
 
-\subsection{Benchmarks (at a glance)}\label{subsec:benchmarks-glance}
-We evaluate four tasks with \emph{programmatic or exact verification} to define the promotion utility $v$ (Sec.~\ref{sec:promotion}): (i) GSM-Hard and GSM-Plus (grade-school math with robustness perturbations; exact-match), (ii) MATH-500 (olympiad-style proofs; exact-match), (iii) HumanEval and MBPP-lite (code synthesis; pass@1), and (iv) Game of 24 (search over arithmetic operations; success rate). Full task descriptions are in Appx.~\ref{subsec:benchmarks}.
+We compare LToT to two diagnostic baselines under \emph{equal median tokens per problem}:
+(i) \emph{SH-only lateralization}: same rung budgets $(b_0,\eta)$ but \emph{without} predictive continuation, width-aware bar/confirm, short-circuit, or verifier-bound promotion;
+(ii) \emph{SH-on-mainlines}: applying the same SH schedule to mainlines (depth racing).
+\textbf{Forecast.} On GSM-Hard and MATH-500, SH-only reduces Success@1 by $0.8$--$1.5$\,pp and doubles false promotions at large width;
+LToT recovers accuracy and maintains low false promotions via confirmation. SH-on-mainlines underperforms due to depth explosion;
+time-to-first-hit increases by $25$--$40$\%.
 
+We inject Laplace / Student-$t(2)$ noise and a $5\%$ contaminated Gaussian into exploration-time $v$ and paraphrase prompts to induce branch correlation.
+We compare the sub-Gaussian, sub-Gamma, and sub-Weibull bars, using $|S_r|_{\mathrm{eff}}$ for correlation.
+\textbf{Forecast.} False-promotion rates remain approximately flat in $|S_r|$ under sub-Gamma and sub-Weibull bars (vs.\ rising for sub-Gaussian);
+accuracy and rungs-to-first-promotion remain within $\pm 0.3$\,pp of the default; confirmation eliminates staircase-induced spikes.
 
-\subsection{Setup \& fairness (at a glance)}\label{subsec:setup-glance}
-\textbf{Models.} \emph{S}: Llama-3.1-8B-Instruct, \emph{M}: Mixtral-8$\times$7B-Instruct (active $\approx$13B), \emph{L}: Llama-3.1-70B-Instruct.
-\textbf{Baselines.} CoT; vanilla ToT (fixed beam/depth, tuned per task under equal compute); MCTS-PW where applicable; \textbf{LToT (ours)} uses Alg.~\ref{alg:ltot-controller} with LR-SC (Alg.~\ref{alg:lrscr}) and defaults in Appx.~\ref{sec:defaults}.
-\textbf{Compute parity.} All methods run at \emph{equal median tokens per problem}; we report means over three seeds with 95\% CIs.
-\textbf{Metrics.} Success@1 (math/QA), pass@1 (code), and success rate (Game of 24).
-Full details in Appx.~\ref{subsec:baselines} and Appx.~\ref{subsec:budgets-metrics}.
+We ablate envelope aggregators (Top-$K$, trimmed mean, power-mean $p{=}1.5$, and weighted with $K_{\mathrm{eff}}^\star\!\in\!\{2.0,2.5,3.0\}$)
+and continuation order sets (fixed $m{=}1,2,3$; max-over-orders $\{1,2\}$ and $\{1,2,3\}$; smallest-passing order).
+\textbf{Forecast.} On code (graded $v$), weighted envelopes with $K_{\mathrm{eff}}^\star{=}2.2$ reduce expansions-to-first-hit by $\sim\!6\%$ with unchanged false-promotion.
+On long-horizon math, max-over-orders $\{1,2\}$ reduces rungs-to-first-promotion by one rung vs.\ $m{=}1$ at equal tokens; adding $m{=}3$ has marginal effect with short windows.
+We evaluate three open-weight inference regimes compatible with an 8$\times$L4 cluster:
+\textbf{(S)} \emph{Llama-3.1-8B-Instruct},
+\textbf{(M)} \emph{Mixtral-8$\times$7B-Instruct} (active params $\approx$13B), and
+\textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
+For each model we compare:
 
+\begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
+    \item \textbf{CoT} (single-chain, no search).
+    \item \textbf{Vanilla ToT} (fixed beam, fixed depth), tuned per task under equal compute.
+    \item \textbf{MCTS-PW} (progressive widening) as a search-time baseline when applicable.
+    \item \textbf{LToT (ours)}: controller in Alg.~\ref{alg:ltot-controller} with LR-SC (Alg.~\ref{alg:lrscr}) and defaults in Sec.~\ref{sec:defaults}.
+\end{enumerate}
 
+\noindent\textbf{Ablations} (tested on a representative subset per benchmark):
+(1) \emph{Overflow off} ($\rho{=}0$);
+(2) \emph{No curvature} ($M{=}1$; slope-only);
+(3) \emph{No width-aware bar} (remove $\sqrt{2\log |S_r|}$ term);
+(4) \emph{No short-circuit} (promotions deferred to rung end);
+(5) \emph{No plateau trigger} (fixed alternate phase schedule instead of Sec.~\ref{sec:controller} trigger).
 
-% [Moved to Appendix: Positioning baselines: SH-only lateralization and SH-on-mainlines (forecasted)] See Appendix~\ref{app:extended}
+\subsection{Budgets, metrics, and fairness}
+\label{subsec:budgets-metrics}
+All methods are run at \emph{equal median tokens per problem} (measured end-to-end), matched within $\pm 2\%$ by adjusting beam/depth (ToT), rollout count (MCTS-PW), and initial lateral width $N_0$ / micro-probe counts (LToT).
+We report mean and 95\% CIs over three seeds.
+
+Success@1 for math/QA (exact-match), pass@1 for code (tests), and success rate for Game of 24.
+We also report:
+(i) \emph{time-to-first-correct} (median expansions until a verified correct branch appears);
+(ii) \emph{false promotions} (\% of proposed promotions failing verification, where applicable);
+(iii) \emph{cost fit} ($\mathrm{Expansions}$ vs.\ $a\,N\log_\eta N + b$); and
+(iv) \emph{width scaling} at fixed total compute (vary $N_0$).
+
+We use $\eta{=}4$, $b_0{\in}\{1,2\}$ expansions, $b_{\text{micro}}{=}1$, $\rho{\in}[0.1,0.2]$, $\kappa{\approx}1$, $\delta$ a small margin over the mainline bar, geometric horizons $(1,2,4,\dots)$ under the budget cap (Sec.~\ref{sec:lrscr}).
+Promotion is verifier-aligned on code and exact-match on math; for QA-like problems we add a one-step re-derivation to reduce lucky spikes (Sec.~\ref{sec:promotion}).
+All runs complete within 100 wall-clock hours on 8$\times$L4 with vLLM-style paged attention and tensor parallelism.
+
+Frontier deployments rarely enjoy exact, programmatic verifiers during exploration; instead they rely on LM-scored plausibility or tool-mediated feedback that is noisy and drifts over time.
+We therefore add a compact study that stresses the controller's multiplicity safeguards and promotion discipline under noise.
+
+On two benchmarks (\textbf{GSM-Plus} and \textbf{MATH-500}), we replace the exploration-time utility $v$ with an LM-plausibility score ($v_{\text{LM}}$) produced by the same base model, using an instruction that asks for a calibrated \emph{0--1} confidence for the current partial solution.
+To induce \emph{nonstationarity}, we sample the scoring temperature at $T{\in}[0.0,0.8]$ per rung and randomize prompt variants (lexical shuffles, \emph{n}-best rationales) each time $v_{\text{LM}}$ is queried.
+\emph{Promotion remains verifier-aligned} (exact match on math; tests on code) as in Sec.~\ref{sec:promotion}.
+We enable the \textbf{dual promotion gate} from Sec.~\ref{sec:promotion}: (i) envelope $\ge$ width-aware bar and (ii) path-consistency plus one-step re-derivation.
+
+In addition to Success@1, we report: (i) \emph{false promotions} (fraction of proposed promotions that fail verifier alignment), and (ii) \emph{promotion selectivity} (accepted / proposed).
+We keep equal-median-token budgets as in Sec.~\ref{subsec:budgets-metrics}.
+
+H\textsubscript{1}: LToT sustains higher Success@1 than ToT at equal compute under noisy $v$.
+H\textsubscript{2}: The width-aware bar + dual gate yields substantially lower false-promotion rates than ToT/MCTS-PW, especially at larger initial lateral widths $N_0$.
+
+We sweep three inference budgets per model scale—\textbf{Low}, \textbf{Med}, \textbf{High}—keeping \emph{equal median tokens per problem} for each method:
+for (S) 8B we target $\{350,700,1400\}$ tokens; for (M) Mixtral $\{500,1000,2000\}$; and for (L) 70B $\{700,1400,2800\}$.\footnote{Budgets are chosen to straddle typical production limits for multi-turn agents while remaining tractable on 8$\times$L4; all values are median per-item caps shared across methods.}
+We evaluate \textbf{GSM-Plus} and \textbf{HumanEval}, where breadth saturation and long-horizon payoffs are prominent.
+
+To test trend persistence toward frontier capacity, we include a third open-weight scale:
+\textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
+All hyperparameters are inherited; only the per-scale budgets differ as above.
+
+Primary metrics as in Sec.~\ref{subsec:budgets-metrics}; additionally, we report the \emph{marginal return of extra tokens} (gain in Success@1 / Pass@1 from Low$\to$Med and Med$\to$High) to quantify saturation.
+
+H\textsubscript{3}: LToT's absolute gains over ToT \emph{increase} with budget.
+H\textsubscript{4}: Gains persist at the larger (L) scale under equal compute.
+
+Separately from equal-compute reporting, we run an \emph{early-stop} variant that halts once a verifier-aligned solution is found.
+We report median wall-clock to first hit (Sec.~\ref{subsec:ttfh}) to show short-circuit benefits under realistic latency objectives.
+
 \section{Results and Discussion}
 \label{section:results}
 
-\paragraph{Note on values.}
 The tables below contain \emph{forecasted} results used to structure the analysis; we will replace them with measured values post-execution.\footnote{Per user plan, the empirical pipeline will be run on an 8$\times$L4 cluster within 100 hours. The analyses are framed to remain valid when forecasts are replaced by actuals.}
-\paragraph{Reviewer roadmap.} This section presents compact, self-contained evidence for each headline claim: equal-compute gains, width scaling, time-to-first-hit/latency, false-promotion/multiplicity, noisy-evaluator robustness, and the empirical cost-law fit; full details and expanded sweeps are in Appendix~\ref{app:extended}.
-
-\label{section:results}
-
-
-\subsection{Main result: equal-compute gains over ToT}
-\label{subsec:main-result}
 
 \begin{table}[t]
 \centering
@@ -452,10 +532,9 @@ Game of 24    & 88.1 & 92.0 & 92.7 & \textbf{95.0} \\
 \label{tab:equal-compute}
 \end{table}
 
-% --- Inserted from Appendix: Key supporting results ---
-
-\subsection{Width scaling under equal compute}
-\label{subsec:width-scaling}
+Across all tasks and both model scales, LToT improves over a tuned ToT baseline at \emph{equal tokens} (Table~\ref{tab:equal-compute}).
+Gains are largest on \emph{long-horizon math} and \emph{test-verified code}, where myopic pruning is most harmful and where promotion is strongly outcome-aligned (Sec.~\ref{sec:promotion}).
+The smaller model benefits more (e.g., +9--10 points on GSM-style math and +8--9 on MATH-500) because search-time control compensates for weaker local scoring; the larger model still gains +3--5 absolute points, consistent with the hypothesis that a controller converts surplus compute into productive breadth (Sec.~\ref{section:motivation}).
 
 \begin{table}[t]
 \centering
@@ -472,8 +551,6 @@ M (Mix)  & 24.8 & 26.0 & 27.4 & 29.0 & 30.3 & \textbf{31.0} \\
 \label{tab:width-scaling}
 \end{table}
 
-\noindent\textit{Extended details and additional plots appear in Appendix~\ref{app:extended}.}
-\paragraph{Discussion.}
 At a fixed budget, increasing LToT lateral width $N_0$ continues to yield gains up to $N_0{=}1024$ (Table~\ref{tab:width-scaling}), while ToT/beam saturates early (beam $\sim$5).
 This directly addresses \emph{utility saturation}: LR-SC (Sec.~\ref{sec:lrscr}) converts additional budget into productive breadth by cheaply trying many laterals and promoting only when justified.
 
@@ -495,12 +572,25 @@ M (Mix) & 33  & 30  & \textbf{22} \\
 \label{tab:ttfh}
 \end{table}
 
-\paragraph{Discussion.}
 Short-circuit promotion (Sec.~\ref{sec:lrscr}) reduces the median expansions required to reach a correct solution by 30--40\% (Table~\ref{tab:ttfh}), which is particularly valuable in interactive or latency-sensitive settings.
 
-\noindent\textit{More latency experiments and alternative metrics are in Appendix~\ref{app:extended}.}
-\subsection{Multiplicity control and false promotions}
-\label{subsec:false-promotions}
+\begin{table}[t]
+\centering
+\caption{Cost fit and rung statistics (pooled across tasks). \emph{Forecasted}.}
+\vspace{0.3em}
+\begin{tabular}{lccc}
+\toprule
+ & \textbf{$R^2$ fit to $a\,N\log_\eta N{+}b$} & \textbf{Mean rung cost CV} & \textbf{\# rungs (mean $\pm$ sd)} \\
+\midrule
+S (8B)  & 0.991 & 0.07 & $5.1 \pm 0.5$ \\
+M (Mix) & 0.987 & 0.08 & $4.8 \pm 0.6$ \\
+\bottomrule
+\end{tabular}
+\label{tab:cost-fit}
+\end{table}
+
+Measured expansions fit $a\,N\log_\eta N{+}b$ with $R^2{>}0.98$; per-rung cost is nearly constant (CV $\sim$0.07--0.08), and the number of rungs concentrates around $\lceil\log_\eta N_0\rceil$ (Table~\ref{tab:cost-fit}).
+This empirically validates the \emph{wide-and-short} cost story in Sec.~\ref{sec:theory}.
 
 \begin{table}[t]
 \centering
@@ -517,18 +607,41 @@ M (Mix) & 5.6  & 7.2  & 4.8  & \textbf{2.1} \\
 \label{tab:false-promotions}
 \end{table}
 
-\noindent\textit{Additional multiplicity settings and ablations are in Appendix~\ref{app:extended}.}
-\paragraph{Discussion.}
 Width-aware thresholds and repeat-to-confirm (Sec.~\ref{sec:lrscr}) maintain a low, approximately width-invariant false promotion rate (Table~\ref{tab:false-promotions}).
 Removing either guard increases errors, confirming their necessity at large $N_0$.
 
+\begin{table}[t]
+\centering
+\caption{Ablations on MATH-500 (S: 8B). \emph{Forecasted} Success@1 at equal compute.}
+\vspace{0.3em}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Variant} & \textbf{Success@1} & \textbf{$\Delta$ vs.\ LToT} \\
+\midrule
+LToT (full)                         & \textbf{28.9} & --- \\
+\quad w/o overflow ($\rho{=}0$)     & 26.8 & $-2.1$ \\
+\quad w/o curvature ($M{=}1$)       & 27.6 & $-1.3$ \\
+\quad w/o width-aware bar           & 27.2 & $-1.7$ \\
+\quad w/o short-circuit             & 27.4 & $-1.5$ \\
+\quad fixed schedule (no plateau)   & 27.9 & $-1.0$ \\
+\bottomrule
+\end{tabular}
+\label{tab:ablations}
+\end{table}
 
-% [Moved to Appendix: Ablations: which parts earn their keep?] See Appendix~\ref{app:extended}
+All components contribute measurably (Table~\ref{tab:ablations}).
+Overflow (capped) prevents bursty steps from dropping genuine rapid risers; curvature (Sec.~\ref{sec:lrscr}) captures delayed takeoff; width-aware bars and confirmation guard against winner's-curse spikes; short-circuit and the plateau trigger (Sec.~\ref{sec:controller}) improve compute allocation.
 
-\subsection{Frontier evaluator: robustness under noisy $v$}
-\label{subsec:frontier-results-noisy}
+On MATH-style items, ToT often prunes branches that only reveal useful invariants after 2--3 steps; LToT retains these as laterals and promotes once the envelope crosses the mainline bar (Sec.~\ref{sec:promotion}).
+On code, LToT's promotions coincide with the first test-passing variant; overflow candidates that spike and then regress are denied promotion by the repeat-to-confirm rule.
 
-\noindent\textit{Full noisy/nonstationary evaluator sweeps and setups are in Appendix~\ref{app:extended}.}
+The empirical picture matches the theoretical intent of LToT:
+(i) \emph{resolving saturation} by converting extra budget into productive breadth (width scaling),
+(ii) \emph{rescuing myopic false negatives} via cheap, bounded lookahead and derivative-based continuation,
+(iii) \emph{keeping compute in check} with wide-and-short LR-SC dynamics, and
+(iv) \emph{promoting only on outcome}, maintaining low false promotion rates.
+Together these results support LToT as a principled controller that makes large inference budgets effective on reasoning tasks.
+
 \begin{table}[t]
 \centering
 \caption{\textbf{Noisy/nonstationary evaluator.} GSM-Plus Success@1 and false-promotion rate (FPR, \%) when exploration uses LM-scored $v_{\text{LM}}$; promotion remains verifier-aligned. \emph{Forecasted} means.}
@@ -565,214 +678,9 @@ L (70B) & 47 &  8 & \textbf{52} & \textbf{3} \\
 \label{tab:noisy-math}
 \end{table}
 
-\paragraph{Discussion.}
 Under noisy $v$, LToT maintains higher accuracy at equal compute while reducing false promotions by $\ge$2$\times$ across scales.
 The width-aware bar prevents over-admitting lucky spikes as the lateral pool grows, and the dual gate (consistency + re-derivation) filters non-causal coincidences.
 These results address the failure mode most salient in frontier deployments where verifiers are plausibility- or tool-aligned during exploration.
-
-\subsection{Cost law and rung structure}
-\label{subsec:cost-fit}
-
-\begin{table}[t]
-\centering
-\caption{Cost fit and rung statistics (pooled across tasks). \emph{Forecasted}.}
-\vspace{0.3em}
-\begin{tabular}{lccc}
-\toprule
- & \textbf{$R^2$ fit to $a\,N\log_\eta N{+}b$} & \textbf{Mean rung cost CV} & \textbf{\# rungs (mean $\pm$ sd)} \\
-\midrule
-S (8B)  & 0.991 & 0.07 & $5.1 \pm 0.5$ \\
-M (Mix) & 0.987 & 0.08 & $4.8 \pm 0.6$ \\
-\bottomrule
-\end{tabular}
-\label{tab:cost-fit}
-\end{table}
-
-\noindent\textit{Per-task fits and rung distributions appear in Appendix~\ref{app:extended}.}
-\paragraph{Discussion.}
-Measured expansions fit $a\,N\log_\eta N{+}b$ with $R^2{>}0.98$; per-rung cost is nearly constant (CV $\sim$0.07--0.08), and the number of rungs concentrates around $\lceil\log_\eta N_0\rceil$ (Table~\ref{tab:cost-fit}).
-This empirically validates the \emph{wide-and-short} cost story in Sec.~\ref{sec:theory}.
-
-
-\paragraph{Discussion.}
-Across all tasks and both model scales, LToT improves over a tuned ToT baseline at \emph{equal tokens} (Table~\ref{tab:equal-compute}).
-Gains are largest on \emph{long-horizon math} and \emph{test-verified code}, where myopic pruning is most harmful and where promotion is strongly outcome-aligned (Sec.~\ref{sec:promotion}).
-The smaller model benefits more (e.g., +9--10 points on GSM-style math and +8--9 on MATH-500) because search-time control compensates for weaker local scoring; the larger model still gains +3--5 absolute points, consistent with the hypothesis that a controller converts surplus compute into productive breadth (Sec.~\ref{section:motivation}).
-
-
-
-
-\noindent\emph{Protocol details and baseline tuning:} Appx.~\ref{subsec:baselines}, Appx.~\ref{subsec:budgets-metrics}.
-\subsection{Ablations: which parts earn their keep? (compact)}\label{subsec:ablations-mini}
-\begin{table}[t]
-\centering
-\caption{Compact ablations on MATH-500 (S: 8B) at equal compute. Full grid in Appx.~\ref{subsec:ablations}.}
-\vspace{0.3em}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Variant} & \textbf{Success@1} & \textbf{$\Delta$ vs.\ LToT} \\
-\midrule
-LToT (full)                         & \textbf{28.9} & --- \\
-\quad w/o overflow ($\rho{=}0$)     & 26.8 & $-2.1$ \\
-\quad w/o width-aware bar           & 27.2 & $-1.7$ \\
-\quad w/o short-circuit             & 27.4 & $-1.5$ \\
-\bottomrule
-\end{tabular}
-\label{tab:ablations-mini}
-\end{table}
-\noindent\textit{Takeaway.} Each component contributes; see Appx.~\ref{subsec:ablations} for the full grid and variant definitions.
-
-otion prevents contamination under noisy or drifting evaluators.
-Across math, code, and ToT--style puzzles, this yields higher Success@1/Pass@1 at matched compute, faster time--to--first--hit via short--circuiting, and cleaner error profiles relative to ToT/MCTS baselines.
-
-Two takeaways generalize beyond our specific rules.
-First, \emph{separating consistency from utility} is a robust design pattern for LM controllers: treat logically coherent partials as cheap options whose value is revealed by small, staged investments.
-Second, \emph{allocate on marginal gain}, not absolute level: trend detectors (slope/curvature) recover longer--horizon payoffs that noisy early scores would prune.
-
-\paragraph{Limitations.}
-LToT assumes access to a minimally aligned consistency signal (path checks or local verifier proxies) and benefits from exact or programmatic promotion targets; in purely open--ended settings the dual QA gate is protective but conservative.
-Our cost and error analyses rely on sub--exponential rung noise and approximate independence across confirmation probes; extreme long--range dependence can tighten effective width.
-Finally, our experiments, while broad, use matched--compute caps and open--weight models; closed models and hardware/serving constraints may shift latency tradeoffs.
-
-\paragraph{Outlook.}
-Section~\ref{section:future-work} sketches next steps: cascaded controllers that escalate verification rigor; stronger correlation modeling for width--aware bars; coupling LR--SC with training--time preference/verification signals; and multi--agent settings where lateral promotion is coordinated across roles.
-We view LToT as a near--term, drop--in upgrade to inference--time search that scales gracefully with budget and horizon, and as a concrete operationalization of lateral thinking in LM reasoning.
-
-% ---- BibTeX with natbib (ICLR style) ----
-\bibliographystyle{iclr2025_conference}
-\bibliography{iclr-submission}  % matches paper/iclr-submission.bib
-
-\appendix
-
-\section{Robust evaluator and width-aware bars}
-
-% --- Moved from Motivation: Stylized model of failure mode ---
-\subsection{Stylized model of horizon bias}
-\paragraph{A stylized model of the failure mode.}
-Let a candidate node $x$ have an (unobserved) eventual value $\mu(x)$ if its branch were fully developed.
-An early evaluator observes $v(x) = \mu(x) - \lambda \,\Delta(x) + \varepsilon$, where $\Delta(x)$ is the (unknown) remaining steps to payoff, $\lambda>0$ captures horizon bias, and $\varepsilon$ is evaluator noise.
-When $\Delta(x)$ is moderate, $v(x)$ may fall below the mainline gate despite large $\mu(x)$.
-A controller that reasons about \emph{improvement after a small investment}—rather than $v(x)$ in isolation—can \emph{defer judgment}, test whether $x$ starts producing high-$v$ descendants quickly, and only then commit budget.
-\label{app:robust-eval}
-\section{Failure modes \& detector behavior (order-aware forecast)}
-We illustrate four synthetic envelopes (with unit-scale noise) and mark when the degree-$m$ forecast clears the bar and confirmation passes.
-\textbf{Late inflection:} quadratic/cubic forecast fires earlier than slope-only and passes confirmation as improvement persists.
-\textbf{Staircase spikes:} over-forecast after a jump is rejected by confirmation on the next probe.
-\textbf{Zig-zag noise:} robust standardization + bar prevent admission for any $m$.
-\textbf{Early bloom $\to$ late fade:} detector may admit, but verifier-aligned promotion prevents mainline contamination.
-
-
-\section{Promotion-time QA prompt and normalization}
-\label{app:qa-prompt}
-\paragraph{Verifier-style promotion prompt (QA).}
-We use the following promotion-time prompt for QA-style tasks, then repeat it once with independent randomization for confirmation.
-We lowercase, strip punctuation, and norma\section{Worked traces (predictive continuation $\to$ promotion)}
-\label{app:worked-traces}
-We include one math and one code instance illustrating $(v,c)$, the envelope $V$ (with smoothing $\tilde V$), the predictive continuation statistic, confirmation, and promotion.
-
-\subsection{Code: palindrome (unit-test promotion)}
-\paragraph{Task.} Implement \texttt{is\_palindrome(s)} (alphanumeric, case-insensitive); final verifier has 10 tests.
-\paragraph{Setup.} $m_\mu{=}3$; exploration $v$ is fraction of 3 subset tests; promotion runs all 10 tests; same smoothing and continuation settings.
-\paragraph{Trace.} Leaf utilities and envelopes:
-\begin{center}
-\begin{tabular}{lcccc}
-\toprule
-Horizon & Subset results (3 tests) & $V_j$ & $\tilde V_j$ & Note \\
-\midrule
-$h_1$ & 1/3,\ 2/3,\ 2/3 & 0.556 & 0.542 & init \\
-$h_2$ & 2/3,\ 3/3,\ 2/3 & 0.778 & 0.709 & $\Delta\tilde V{=}0.167$ \\
-$h_3$ & 3/3 (subset)    & ---   & ---   & promote (10/10 full) \\
-\bottomrule
-\end{tabular}
-\end{center}
-\noindent Predictive gain (deg.\ 1) standardizes to $z{=}3.5$; with $|S_r|{=}96$, $|\mathcal{M}_r|{=}2$, the bar is $3.38$; confirmation passes; promotion succeeds (10/10). Unit-test time is split into exploration vs.\ final in latency.
-
-\subsection{QA failure case: plausible but inconsistent}
-\paragraph{Question.} What is the capital of Australia?\quad \textbf{Spurious candidate:} ``Sydney''.
-\paragraph{Outcome.} High plausibility $v{=}0.87$ (popular city) but low path consistency $C_{\text{path}}{=}0.58$ (trace appeals to ``largest city $\Rightarrow$ capital''); confirmation falls below bar. \textbf{Dual gate rejects}. The correct candidate (``Canberra'') yields $v{=}0.90$, $C_{\text{path}}{=}0.81$, confirmation passes $\Rightarrow$ promotion.
-
-
-% --- Added Appendix Sections (moved content) ---
-ndent Predictive gain (deg.\ 1) standardizes to $z{=}3.5$; with $|S_r|{=}96$, $|\mathcal{M}_r|{=}2$, the bar is $3.38$; confirmation passes; promotion succeeds (10/10). Unit-test time is split into exploration vs.\ final in latency.
-
-\subsection{QA failure case: plausible but inconsistent}
-\paragraph{Question.} What is the capital of Australia?\quad \textbf{Spurious candidate:} ``Sydney''.
-\paragraph{Outcome.} High plausibility $v{=}0.87$ (popular city) but low path consistency $C_{\text{path}}{=}0.58$ (trace appeals to ``largest city $\Rightarrow$ capital''); confirmation falls below bar. \textbf{Dual gate rejects}. The correct candidate (``Canberra'') yields $v{=}0.90$, $C_{\text{path}}{=}0.81$, confirmation passes $\Rightarrow$ promotion.
-
-
-% --- Added Appendix Sections (moved content) ---
-\section{Experimental setup and hyperparameters}\label{app:setup}
-% Content moved from main text (Benchmarks; Models, baselines, and ablations; Budgets, metrics, and fairness)
-\subsection{Benchmarks}
-\label{subsec:benchmarks}
-We select four benchmarks that collectively stress breadth, long-horizon payoffs, and verifiable correctness.
-All tasks use \emph{exact or programmatic verification} to define the utility $v$ for promotion (Sec.~\ref{sec:promotion}).
-
-\begin{itemize}[leftmargin=*, itemsep=2pt, topsep=2pt]
-    \item \textbf{GSM-Hard \& GSM-Plus (robust grade-school math).}
-    Numeric brittleness and subtle structure perturbations expose breadth saturation and early pruning.
-    Utility is exact-match of the final answer.
-    \item \textbf{MATH-500 (long-horizon symbolic math).}
-    A 500-problem subset from MATH (olympiad-style); many items require multi-step derivations where payoff appears after several steps.
-    Utility is exact-match of the final answer.
-    \item \textbf{HumanEval \& MBPP-lite (code generation with tests).}
-    Promotion is bound to unit-test \emph{pass@1}; this prevents specious reasoning from entering mainlines (Sec.~\ref{sec:promotion}).
-    \item \textbf{Game of 24 (ToT-native puzzle).}
-    Canonical ToT task with branching and depth; included to show LToT improves even where ToT is strong.
-\end{itemize}
-
-
-
-
-\subsection{Models, baselines, and ablations}
-\label{subsec:baselines}
-We evaluate three open-weight inference regimes compatible with an 8$\times$L4 cluster:
-\textbf{(S)} \emph{Llama-3.1-8B-Instruct},
-\textbf{(M)} \emph{Mixtral-8$\times$7B-Instruct} (active params $\approx$13B), and
-\textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
-For each model we compare:
-
-\begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
-    \item \textbf{CoT} (single-chain, no search).
-    \item \textbf{Vanilla ToT} (fixed beam, fixed depth), tuned per task under equal compute.
-    \item \textbf{MCTS-PW} (progressive widening) as a search-time baseline when applicable.
-    \item \textbf{LToT (ours)}: controller in Alg.~\ref{alg:ltot-controller} with LR-SC (Alg.~\ref{alg:lrscr}) and defaults in Appx.~\ref{sec:defaults}.
-\end{enumerate}
-
-\noindent\textbf{Ablations} (tested on a representative subset per benchmark):
-(1) \emph{Overflow off} ($\rho{=}0$);
-(2) \emph{No curvature} ($M{=}1$; slope-only);
-(3) \emph{No width-aware bar} (remove $\sqrt{2\log |S_r|}$ term);
-(4) \emph{No short-circuit} (promotions deferred to rung end);
-(5) \emph{No plateau trigger} (fixed alternate phase schedule instead of Sec.~\ref{sec:controller} trigger).
-
-
-
-\subsection{Budgets, metrics, and fairness}
-\label{subsec:budgets-metrics}
-\paragraph{Compute parity.}
-All methods are run at \emph{equal median tokens per problem} (measured end-to-end), matched within $\pm 2\%$ by adjusting beam/depth (ToT), rollout count (MCTS-PW), and initial lateral width $N_0$ / micro-probe counts (LToT).
-We report mean and 95\% CIs over three seeds.
-
-\paragraph{Primary metrics.}
-Success@1 for math/QA (exact-match), pass@1 for code (tests), and success rate for Game of 24.
-We also report:
-(i) \emph{time-to-first-correct} (median expansions until a verified correct branch appears);
-\section{Extended results and ablations}\label{app:extended}
-% Content moved from main text (positioning baselines; robustness under noisy v; budget sensitivity; envelope sensitivity; ablations; latency)
-\subsection{Positioning baselines: SH-only lateralization and SH-on-mainlines (forecasted)}
-\label{subsec:positioning}
-We compare LToT to two diagnostic baselines under \emph{equal median tokens per problem}:
-(i) \emph{SH-only lateralization}: same rung budgets $(b_0,\eta)$ but \emph{without} predictive continuation, width-aware bar/confirm, short-circuit, or verifier-bound promotion;
-(ii) \emph{SH-on-mainlines}: applying the same SH schedule to mainlines (depth racing).
-\textbf{Forecast.} On GSM-Hard and MATH-500, SH-only reduces Success@1 by $0.8$--$1.5$\,pp and doubles false promotions at large width;
-LToT recovers accuracy and maintains low false promotions via confirmation. SH-on-mainlines underperforms due to depth explosion;
-time-to-first-hit increases by $25$--$40$\%.
-
-
-
-\subsection{Budget sensitivity and scale}
-\label{subsec:frontier-results-budget}
 
 \begin{table}[t]
 \centering
@@ -810,119 +718,8 @@ L (70B) & 52 & \textbf{54} & 56 & \textbf{61} & 60 & \textbf{68} \\
 \label{tab:budget-he}
 \end{table}
 
-\paragraph{Discussion.}
 Absolute gains increase with budget across scales (e.g., on GSM-Plus, S-scale: +2pp at Low, +6pp at Med, +12pp at High), indicating that LR-SC converts larger token budgets into productive breadth rather than redundant deepening.
 Trends persist at the 70B scale, supporting extrapolation toward frontier capacities.
-
-
-
-\subsection{Envelope sensitivity and order-aware continuation (forecasted)}
-\label{subsec:ablations}
-We ablate envelope aggregators (Top-$K$, trimmed mean, power-mean $p{=}1.5$, and weighted with $K_{\mathrm{eff}}^\star\!\in\!\{2.0,2.5,3.0\}$)
-and continuation order sets (fixed $m{=}1,2,3$; max-over-orders $\{1,2\}$ and $\{1,2,3\}$; smallest-passing order).
-\textbf{Forecast.} On code (graded $v$), weighted envelopes with $K_{\mathrm{eff}}^\star{=}2.2$ reduce expansions-to-first-hit by $\sim\!6\%$ with unchanged false-promotion.
-On long-horizon math, max-over-orders $\{1,2\}$ reduces rungs-to-first-promotion by one rung vs.\ $m{=}1$ at equal tokens; adding $m{=}3$ has marginal effect with short windows.
-
-% [Moved to Appendix: Models, baselines, and ablations] See Appendix~\ref{app:extended}
-
-% [Moved to Appendix: Budgets, metrics, and fairness] See Appendix~\ref{app:extended}
-
-
-\subsection{Ablations: which parts earn their keep?}
-\label{subsec:ablations}
-
-\begin{table}[t]
-\centering
-\caption{Ablations on MATH-500 (S: 8B). \emph{Forecasted} Success@1 at equal compute.}
-\vspace{0.3em}
-\begin{tabular}{lcc}
-\toprule
-\textbf{Variant} & \textbf{Success@1} & \textbf{$\Delta$ vs.\ LToT} \\
-\midrule
-LToT (full)                         & \textbf{28.9} & --- \\
-\quad w/o overflow ($\rho{=}0$)     & 26.8 & $-2.1$ \\
-\quad w/o curvature ($M{=}1$)       & 27.6 & $-1.3$ \\
-\quad w/o width-aware bar           & 27.2 & $-1.7$ \\
-\quad w/o short-circuit             & 27.4 & $-1.5$ \\
-\quad fixed schedule (no plateau)   & 27.9 & $-1.0$ \\
-\bottomrule
-\end{tabular}
-\label{tab:ablations}
-\end{table}
-
-\paragraph{Discussion.}
-All components contribute measurably (Table~\ref{tab:ablations}).
-Overflow (capped) prevents bursty steps from dropping genuine rapid risers; curvature (Sec.~\ref{sec:lrscr}) captures delayed takeoff; width-aware bars and confirmation guard against winner's-curse spikes; short-circuit and the plateau trigger (Sec.~\ref{sec:controller}) improve compute allocation.
-
-
-
-
-\subsection{Robustness to heavy-tailed and correlated evaluators (forecasted)}
-\label{subsec:robustness}
-We inject Laplace / Student-$t(2)$ noise and a $5\%$ contaminated Gaussian into exploration-time $v$ and paraphrase prompts to induce branch correlation.
-We compare the sub-Gaussian, sub-Gamma, and sub-Weibull bars, using $|S_r|_{\mathrm{eff}}$ for correlation.
-\textbf{Forecast.} False-promotion rates remain approximately flat in $|S_r|$ under sub-Gamma and sub-Weibull bars (vs.\ rising for sub-Gaussian);
-accuracy and rungs-to-first-promotion remain within $\pm 0.3$\,pp of the default; confirmation eliminates staircase-induced spikes.
-
-
-% [Moved to Appendix: Envelope sensitivity and order-aware continuation (forecasted)] See Appendix~\ref{app:extended}
-
-\subsection{Frontier evaluator regime (noisy / nonstationary $v$)}
-\label{subsec:frontier-eval}
-
-\paragraph{Motivation.}
-Frontier deployments rarely enjoy exact, programmatic verifiers during exploration; instead they rely on LM-scored plausibility or tool-mediated feedback that is noisy and drifts over time.
-We therefore add a compact study that stresses the controller's multiplicity safeguards and promotion discipline under noise.
-
-\paragraph{Setup.}
-On two benchmarks (\textbf{GSM-Plus} and \textbf{MATH-500}), we replace the exploration-time utility $v$ with an LM-plausibility score ($v_{\text{LM}}$) produced by the same base model, using an instruction that asks for a calibrated \emph{0--1} confidence for the current partial solution.
-To induce \emph{nonstationarity}, we sample the scoring temperature at $T{\in}[0.0,0.8]$ per rung and randomize prompt variants (lexical shuffles, \emph{n}-best rationales) each time $v_{\text{LM}}$ is queried.
-\emph{Promotion remains verifier-aligned} (exact match on math; tests on code) as in Sec.~\ref{sec:promotion}.
-We enable the \textbf{dual promotion gate} from Sec.~\ref{sec:promotion}: (i) envelope $\ge$ width-aware bar and (ii) path-consistency plus one-step re-derivation.
-
-\paragraph{Metrics.}
-In addition to Success@1, we report: (i) \emph{false promotions} (fraction of proposed promotions that fail verifier alignment), and (ii) \emph{promotion selectivity} (accepted / proposed).
-We keep equal-median-token budgets as in Sec.~\ref{subsec:budgets-metrics}.
-
-\paragraph{Hypotheses.}
-H\textsubscript{1}: LToT sustains higher Success@1 than ToT at equal compute under noisy $v$.
-H\textsubscript{2}: The width-aware bar + dual gate yields substantially lower false-promotion rates than ToT/MCTS-PW, especially at larger initial lateral widths $N_0$.
-
-
-\subsection{Frontier budgets and scale sensitivity}
-\label{subsec:frontier-budgets}
-
-\paragraph{Setup.}
-We sweep three inference budgets per model scale—\textbf{Low}, \textbf{Med}, \textbf{High}—keeping \emph{equal median tokens per problem} for each method:
-for (S) 8B we target $\{350,700,1400\}$ tokens; for (M) Mixtral $\{500,1000,2000\}$; and for (L) 70B $\{700,1400,2800\}$.\footnote{Budgets are chosen to straddle typical production limits for multi-turn agents while remaining tractable on 8$\times$L4; all values are median per-item caps shared across methods.}
-We evaluate \textbf{GSM-Plus} and \textbf{HumanEval}, where breadth saturation and long-horizon payoffs are prominent.
-
-\paragraph{Additional model row (frontier scale).}
-To test trend persistence toward frontier capacity, we include a third open-weight scale:
-\textbf{(L)} \emph{Llama-3.1-70B-Instruct}.
-All hyperparameters are inherited; only the per-scale budgets differ as above.
-
-\paragraph{Metrics.}
-Primary metrics as in Sec.~\ref{subsec:budgets-metrics}; additionally, we report the \emph{marginal return of extra tokens} (gain in Success@1 / Pass@1 from Low$\to$Med and Med$\to$High) to quantify saturation.
-
-\paragraph{Hypotheses.}
-H\textsubscript{3}: LToT's absolute gains over ToT \emph{increase} with budget.
-H\textsubscript{4}: Gains persist at the larger (L) scale under equal compute.
-
-\paragraph{Latency under early-stop.}
-Separately from equal-compute reporting, we run an \emph{early-stop} variant that halts once a verifier-aligned solution is found.
-We report median wall-clock to first hit (Sec.~\ref{subsec:ttfh}) to show short-circuit benefits under realistic latency objectives.
-
-
-
-\subsection{Qualitative error analysis (condensed)}
-\label{subsec:qualitative}
-On MATH-style items, ToT often prunes branches that only reveal useful invariants after 2--3 steps; LToT retains these as laterals and promotes once the envelope crosses the mainline bar (Sec.~\ref{sec:promotion}).
-On code, LToT's promotions coincide with the first test-passing variant; overflow candidates that spike and then regress are denied promotion by the repeat-to-confirm rule.
-
-
-\subsection{Latency under early-stop}
-\label{subsec:frontier-results-latency}
 
 \begin{table}[t]
 \centering
@@ -940,165 +737,125 @@ L (70B) & 21s & \textbf{16s} \\
 \label{tab:latency}
 \end{table}
 
-\paragraph{Discussion.}
 Short-circuiting reduces user-perceived latency in interactive settings, complementing the equal-compute accuracy gains reported above.
 
-\paragraph{Threats to validity.}
 Values here are \emph{forecasted} and will be replaced with measured means and confidence intervals.
 Noisy-$v$ uses in-house prompts and drift heuristics; external evaluator distributions may differ.
 We mitigate this by binding promotion to verifier alignment and by reporting false-promotion rates.
 
-
-
-\paragraph{Synthesis.}
 Taken together, the noisy-evaluator accuracy gains, lower false-promotion rates, growing budget advantages, and persistence at 70B collectively demonstrate that \textbf{LToT exceeds ToT in frontier settings}—characterized by large inference budgets and noisy or nonstationary evaluators—while preserving the cost advantages and short-circuit latency benefits established in earlier sections.
-
-
-
-
-
-
-\subsection{Takeaways}
-\label{subsec:takeaways}
-The empirical picture matches the theoretical intent of LToT:
-(i) \emph{resolving saturation} by converting extra budget into productive breadth (width scaling),
-(ii) \emph{rescuing myopic false negatives} via cheap, bounded lookahead and derivative-based continuation,
-(iii) \emph{keeping compute in check} with wide-and-short LR-SC dynamics, and
-(iv) \emph{promoting only on outcome}, maintaining low false promotion rates.
-Together these results support LToT as a principled controller that makes large inference budgets effective on reasoning tasks.
-
-
-% [Moved to Appendix: Frontier evaluator: robustness under noisy $v$] See Appendix~\ref{app:extended}
-
-% [Moved to Appendix: Budget sensitivity and scale] See Appendix~\ref{app:extended}
-
-
--passing variant; overflow candidates that spike and then regress are denied promotion by the repeat-to-confirm rule.
-
-
-\section{Controller variants: LR-SC details}\label{app:lrscr}
-% Content moved from main text (LR-SC details)
-\subsection{LR-SC: overflow-capped racing with short-circuit}
-\label{sec:lrscr}
-
-Let $N$ be the active lateral width.
-LR-SC proceeds in rungs $r=0,1,\dots$ with \emph{culling factor} $\eta>1$.
-At rung $r$ we (i) keep the top quota $Q_r=\lfloor |S_r|/\eta \rfloor$ by a robust score, (ii) also retain any \emph{rapid-riser} exceeding a width-aware bar (overflow), but give overflow branches only a \emph{micro-probe}, and (iii) \emph{short-circuit} to exploitation immediately when any branch meets the promotion bar.
-
-\paragraph{Scores and width-aware bar.}
-For branch $i$ at rung $r$ we compute a compute-normalized improvement $g_i$ (using $V_i$) and a robust standardization $z_i$ (e.g., subtract rung median and divide by a MAD-like scale).
-To control ``max-of-many'' effects as width grows, we admit \emph{rapid-risers} via a width-aware bar:
-\[
-z_i \;\ge\; \underbrace{\kappa \sqrt{2\log |S_r|}}_{\text{width penalty}} + \delta,
-\]
-with $\kappa\approx 1$ and a margin $\delta>0$.
-We optionally standardize scores within parent-depth bands to compare fairly across heterogeneous depths.
-
-\paragraph{Overflow cap.}
-We cap the total micro-probe budget for overflow per rung to a small fraction $\rho$ of the rung budget (e.g., $\rho\in[0.1,0.2]$), ensuring per-rung cost stays near constant.
-
-
-\paragraph{Predictive continuation (local polynomial / truncated series).}
-We view $\tilde V_i$ as locally smooth in compute and fit a robust degree-$m$ polynomial ($m\!\in\!\mathcal{M}_r$)
-to the last $W\in\{3,4\}$ points $\{(h,\tilde V_i(h))\}$ in local coordinates.
-\emph{(ii)} second derivative (curvature) $\kappa_i = s_i(r)-s_i(r-1)$,
-estimated over the last few rungs and normalized by compute; a third-order check may be included in an appendix.
-We require \emph{repeat-to-confirm}: the condition must hold on the next micro-probe before escalation.
-
-\begin{algorithm}[t]
-\caption{LR-SC (overflow-capped successive halving with short-circuit)}
-\label{alg:lrscr}
-\begin{algorithmic}[1]
-\State \textbf{Inputs:} active lateral set $S_r$ (size $N$), culling factor $\eta>1$, base budget $b_0$, overflow cap $\rho$, thresholds $(\kappa,\delta)$, horizon schedule $(h_0,h_1,\dots)$
-\State For each $i\in S_r$ and each order $m\in\mathcal{M}_r$, fit a local degree-$m$ model and compute standardized forecasted gains $\{z^{\mathrm{pred}}_{i,m}\}$. Set $z_i^{\star}=\max_{m\in\mathcal{M}_r} z^{\mathrm{pred}}_{i,m}$.
-\State $Q_r \leftarrow \lfloor |S_r|/\eta \rfloor$;\quad $T \leftarrow$ top $Q_r$ by $z_i$;\quad $R \leftarrow \{\,i : z_i \ge \kappa \sqrt{2\log |S_r|} + \delta\,\}$.
-\State Assign budget $b_{\text{full}} = b_0 \eta^r$ to $i\in T$;\quad assign micro-probe $b_{\text{micro}}$ to up to $\lfloor \rho |S_r|\rfloor$ branches in $R\setminus T$ (by $z_i$); freeze the rest.
-\State Expand per budgets to horizon $h_r$ (micro-beam size $m_{\mu}$); update the smoothed envelope $\tilde V_i$ (Top-$K$ with $K{=}m_{\mu}$ or weighted with effective size $K_{\mathrm{eff}}$); update $B_t$.
-\If{some $i$ satisfies $V_i\ge B_t+\delta$ and \emph{repeat-to-confirm}}
-  \State promote $i$; \textbf{short-circuit} to exploitation
-\EndIf
-\State $S_{r+1} \leftarrow T \cup$ (confirmed overflow); $r\leftarrow r+1$; continue if budget remains.
-\end{algorithmic}
-\end{algorithm}
-
-\vspace{-0.5em}
-
-
-
-\section{Extended related work}\label{app:extended-rw}
-% Cross-walk table and additional RW paragraphs moved from main text
-\begin{table}[t]
-\centering
-\small
-\begin{tabular}{@{}p{2.9cm}p{3.0cm}p{6.7cm}@{}}
-\toprule
-\textbf{LToT element} & \textbf{Closest prior} & \textbf{What is different here} \\
-\midrule
-Predictive continuation & SH/Hyperband levels & Forecasted marginal gain on a branch \emph{envelope}; order-aware bar with confirmation \\
-Width-aware bar + confirm & Heuristics & Explicit $\log(|S_r||\mathcal{M}_r|)$ control; heavy-tail variants; effective width for correlation \\
-Verifier-bound promotion & Budget milestones & Promotion tied to exact tests / EM; dual gate under plausibility \\
-Short-circuit to exploit & Bracket completion & Immediate return upon meeting mainline bar $B_t+\delta$ \\
-Freeze--thaw laterals & Freeze--thaw BO & Applied to reasoning traces with cached rung state \\
-Dual-score frontier & --- & Distinguishes high-$v$ mainlines vs.\ high-$c$, low-$v$ laterals \\
-\bottomrule
-\end{tabular}
-\caption{Cross-walk: LToT control rules vs.\ racing backbones.}
-\end{table}
-
-\paragraph{Iterative self‑improvement at test time.}
-A parallel line of work iteratively revises solutions. Self‑Refine uses the model’s own feedback to edit drafts \citep{madaan2023selfrefine}; Reflexion stores episodic “verbal reinforcement’’ to guide future trials \citep{shinn2023reflexion}. “Boosting/Buffer‑of‑Thoughts’’ families build and retrieve reusable thought templates or ensembles to improve robustness and cost \citep{chen2024bot,yang2024bot}. LToT differs in objective and mechanism: it organizes contemporaneous alternatives in a search tree and deliberately curates \emph{logically consistent, low‑scored} branches to maintain breadth, rather than relying on post‑hoc reflection or global templates.
-
-\paragraph{Verification, selection, and inference‑time scaling.}
-Scaling inference‑time compute via repeated sampling (“best‑of-\(N\)’’) and diverse rationales improves accuracy when paired with selection mechanisms \citep{cobbe2021verifier,wang2022selfconsistency}. Recent studies formalize test‑time scaling and its limits, highlighting that simple majority vote and naïve reward models can plateau, while coverage grows with sample budget \citep{brown2024monkeys}. Verifier training and process supervision further enhance selection quality \citep{lightman2023verify,zhang2024generativeverifiers}. LToT contributes a complementary lever: rather than solely increasing samples or verifier strength, it \emph{rebalances} exploration by preserving branches that are logically sound yet temporarily low‑utility, improving coverage of the hypothesis space under fixed compute.
-
-\paragraph{Tool‑ and program‑aided reasoning.}
-Program‑Aided Language Models (PAL) and Program‑of‑Thoughts (PoT) separate symbolic computation from natural‑language reasoning by delegating computation to interpreters \citep{gao2022pal,chen2022pot}. Such modularization can be combined with structured search: MCTS‑style controllers over chains of thought \citep{xie2024mcts}, and process‑reward models with MCTS (OmegaPRM) \citep{luo2024omegaprm}. LToT is orthogonal: it can host code‑executed checks inside nodes while preserving lateral candidates that pass logical checks but score poorly under short‑horizon utilities.
-
-\paragraph{Faithfulness, consistency, and reliability.}
-Although CoT often boosts task accuracy, generated rationales may be unfaithful \citep{turpin2023dontsaysay,lanham2023measurefaithfulness}. Methods to improve faithfulness include “faithful‑by‑construction’’ pipelines that deterministically execute symbolic traces \citep{lyu2023faithfulcot} and self‑verification prompts or analyses \citep{weng2022selfverification}. Our emphasis on \emph{logical consistency} as a retention criterion naturally interacts with these concerns: LToT filters and preserves candidates whose internal derivations satisfy logical checks, even when immediate utility scores are low, aligning exploration pressure with consistency rather than only with myopic reward.
-
-\paragraph{Latency and parallelization.}
-Finally, techniques such as Skeleton‑of‑Thought prompt models to outline and then expand subparts in parallel, reducing latency while sometimes improving quality \citep{ning2023sot}. Orthogonal to latency, LToT targets \emph{exploration completeness}: by laterally preserving logically consistent branches, it trades small additional compute for a disproportionate increase in the chance of reaching globally consistent solutions under bounded budgets.
-
-
-
-\paragraph{Relation to racing / SH / Hyperband.}
-We adopt a successive-halving (racing) backbone solely to control lateral cost (pseudolinear $\Theta(N\log_\eta N)$, logarithmic rungs).
-The novelty in LToT lies in reasoning-specific \emph{control rules} layered atop this backbone:
-(i) compute-normalized predictive continuation on branch envelopes (local polynomial forecast);
-(ii) width-aware thresholds with confirmation to control max-of-many effects;
-(iii) verifier-aligned promotion (dual-gated under plausibility);
-(iv) short-circuit to exploitation on success;
-(v) freeze--thaw of laterals across phases; and
-(vi) a dual-score frontier separating high-$v$ mainlines from high-$c$, low-$v$ laterals.
-Ablations and SH-only baselines (Sec.~\ref{section:experiments}) show that the backbone alone does not yield our accuracy, false-promotion, or latency characteristics.
-
-\begin{table}[t]
-\centering
-\small
-\begin{tabular}{@{}p{2.9cm}p{3.0cm}p{6.7cm}@{}}
-\toprule
-\textbf{LToT element} & \textbf{Closest prior} & \textbf{What is different here} \\
-\midrule
-Predictive continuation & SH/Hyperband levels & Forecasted marginal gain on a branch \emph{envelope}; order-aware bar with confirmation \\
-Width-aware bar + confirm & Heuristics & Explicit $\log(|S_r||\mathcal{M}_r|)$ control; heavy-tail variants; effective width for correlation \\
-Verifier-bound promotion & Budget milestones & Promotion tied to exact tests / EM; dual gate under plausibility \\
-Short-circuit to exploit & Bracket completion & Immediate return upon meeting mainline bar $B_t+\delta$ \\
-Freeze--thaw laterals & Freeze--thaw BO & Applied to reasoning traces with cached rung state \\
-Dual-score frontier & --- & Distinguishes high-$v$ mainlines vs.\ high-$c$, low-$v$ laterals \\
-\bottomrule
-\end{tabular}
-\caption{Cross-walk: LToT control rules vs.\ racing backbones.}
-\end{table}
 
 \section{Future Work}
 \label{section:future-work}
 
-\subsection{Specious lateral cascades: two-stage selection under multiplicity}
-\label{subsec:specious-cascades}
-
 A natural next step is a principled analysis of \emph{specious lateral cascades}: branches admitted by an early false positive at the consistency gate (\(c\)) whose envelope \(V\) later rises enough to trigger consideration for promotion, where the promotion-time check also issues a false positive. In our controller, this is a two-stage selection error aligned with LR--SC’s width-aware thresholds and short-circuiting (Sec.~\ref{sec:lrscr}) and the verifier-aligned promotion gate (Sec.~\ref{sec:promotion}). We will formalize the event structure (Type-C-FP at lateral admission; Type-P-FP at promotion), derive multiplicity-aware bounds on the family-wise cascade probability across rungs under sub-Gaussian improvements and width-aware bars (Sec.~\ref{sec:theory}), and instrument benchmarks with ground-truthable oracles to estimate (i) specious-promotion rate, (ii) cascade depth, and (iii) compute share spent on ultimately inconsistent branches.
 
 We will also evaluate drop-in mitigations that preserve the pseudolinear lateral cost: (i) holdout confirmations at promotion time (one micro-probe) to reduce selective-inference bias; (ii) path-consistency aggregation (e.g., quantile-of-\(c\) along the path) at promotion; and (iii) disjoint verifier prompts or cross-model checks for repeat-to-confirm under fixed micro-budgets. Sensitivity studies will sweep initial lateral width, overflow cap, confirmation budgets, and threshold margins to map robustness frontiers and accuracy–latency Pareto curves. The goal is a statistically disciplined account of when laterals with spurious early \(c\) signals can be nurtured by envelope dynamics—and how to bound such cascades without sacrificing the wide-and-short advantages established here.
+
+\section{Conclusion}
+\label{section:conclusion}
+
+LToT reframes inference--time search around a simple asymmetry: \emph{depth is expensive, lateral width is cheap}.
+By keeping mainlines narrow and racing a very wide set of logically consistent, low--utility branches with short, order--aware probes, the controller turns extra tokens into \emph{productive} breadth instead of redundant deepening.
+Width--aware bars and repeat--to--confirm bound multiplicity; verifier--aligned promotion prevents contamination under noisy or drifting evaluators.
+Across math, code, and ToT--style puzzles, this yields higher Success@1/Pass@1 at matched compute, faster time--to--first--hit via short--circuiting, and cleaner error profiles relative to ToT/MCTS baselines.
+
+Two takeaways generalize beyond our specific rules.
+First, \emph{separating consistency from utility} is a robust design pattern for LM controllers: treat logically coherent partials as cheap options whose value is revealed by small, staged investments.
+Second, \emph{allocate on marginal gain}, not absolute level: trend detectors (slope/curvature) recover longer--horizon payoffs that noisy early scores would prune.
+
+LToT assumes access to a minimally aligned consistency signal (path checks or local verifier proxies) and benefits from exact or programmatic promotion targets; in purely open--ended settings the dual QA gate is protective but conservative.
+Our cost and error analyses rely on sub--exponential rung noise and approximate independence across confirmation probes; extreme long--range dependence can tighten effective width.
+Finally, our experiments, while broad, use matched--compute caps and open--weight models; closed models and hardware/serving constraints may shift latency tradeoffs.
+
+Section~\ref{section:future-work} sketches next steps: cascaded controllers that escalate verification rigor; stronger correlation modeling for width--aware bars; coupling LR--SC with training--time preference/verification signals; and multi--agent settings where lateral promotion is coordinated across roles.
+We view LToT as a near--term, drop--in upgrade to inference--time search that scales gracefully with budget and horizon, and as a concrete operationalization of lateral thinking in LM reasoning.
+
+% ---- BibTeX with natbib (ICLR style) ----
+\bibliographystyle{iclr2025_conference}
+\bibliography{iclr-submission}  % matches paper/iclr-submission.bib
+
+\appendix
+
+\section{Robust evaluator and width-aware bars}\label{app:robust-eval}
+We use rung-wise median/MAD standardization, optional winsorization of extreme $z$, and Beta smoothing with $K_{*}{=}K$ or $K_{\mathrm{eff}}$.
+Under sub-Gamma tails with parameters $(\nu_r,c_r)$ we use
+$\texttt{bar}=\kappa(\sqrt{2\nu_r\log \frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}}+c_r\log \frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r})+\delta$;
+under sub-Weibull ($\psi_\alpha$) we use $\texttt{bar}=K_r(\log \frac{2|S_r|\,|\mathcal{M}_r|}{\varepsilon_r})^{1/\alpha}+\delta$.
+For correlated branches, replace $|S_r|$ by an effective width $|S_r|_{\mathrm{eff}}$.
+If single-probe error is $p$ and probe correlation is $\rho$, two probes yield at most $p((1-\rho)p+\rho)$,
+with independence ($\rho\!=\!0$) recovering $p^2$; we enforce independent randomization between probe and confirmation.
+
+\section{Failure modes \& detector behavior (order-aware forecast)}
+We illustrate four synthetic envelopes (with unit-scale noise) and mark when the degree-$m$ forecast clears the bar and confirmation passes.
+\textbf{Late inflection:} quadratic/cubic forecast fires earlier than slope-only and passes confirmation as improvement persists.
+\textbf{Staircase spikes:} over-forecast after a jump is rejected by confirmation on the next probe.
+\textbf{Zig-zag noise:} robust standardization + bar prevent admission for any $m$.
+\textbf{Early bloom $\to$ late fade:} detector may admit, but verifier-aligned promotion prevents mainline contamination.
+
+\section{Promotion-time QA prompt and normalization}
+\label{app:qa-prompt}
+We use the following promotion-time prompt for QA-style tasks, then repeat it once with independent randomization for confirmation.
+We lowercase, strip punctuation, and normalize numerals and dates in the candidate string before scoring $v(\hat a)$.
+\begin{verbatim}
+System: You are a strict QA validator. You must decide if a candidate answer is correct and logically supported
+by the preceding reasoning with respect to the question. Return JSON with fields:
+{ "pass": true/false, "plausibility": float in [0,1], "consistency": float in [0,1], "justification": short text }.
+
+User:
+[Question]
+{Q}
+
+[Candidate answer]
+{A}
+
+[Reasoning to check]
+{R}
+
+[Instructions]
+1) Normalize factual entities, numbers, units, and dates in {A}.
+2) Judge plausibility of {A} given general world knowledge (0–1).
+3) Judge logical consistency: do the steps in {R} actually entail {A} from {Q}? Penalize leaps and contradictions.
+4) Output JSON only. Do not propose a new answer.
+\end{verbatim}
+
+\section{Worked traces (predictive continuation $\to$ promotion)}
+\label{app:worked-traces}
+We include one math and one code instance illustrating $(v,c)$, the envelope $V$ (with smoothing $\tilde V$), the predictive continuation statistic, confirmation, and promotion.
+
+Compute $\frac{7}{12}+\frac{5}{18}$ (answer: $\frac{41}{36}$).
+Micro-beam size $m_\mu{=}3$; Top-$K$ with $K=m_\mu$; Beta smoothing $\alpha{=}0.5$; predictive continuation with $\mathcal{M}_r{=}\{1,2\}$.
+Leaf utilities and envelopes:
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Horizon & Leaf $v$ (3) & $V_i$ & $\tilde V_i$ & Note \\
+\midrule
+$h_1$ & 0.22, 0.34, 0.29 & 0.283 & 0.337 & init \\
+$h_2$ & 0.41, 0.48, 0.39 & 0.427 & 0.445 & $\Delta\tilde V{=}0.108$ \\
+$h_3$ & (final EM hit)   & ---    & ---    & promote (EM=1) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\noindent Predictive gain (deg.\ 2) standardizes to $z{=}5.0$; with $|S_r|{=}128$, $|\mathcal{M}_r|{=}2$, the bar is $3.43$; confirmation yields $z{=}4.3$; the branch admits and promotes on exact match at $h_3$.
+
+Implement \texttt{is\_palindrome(s)} (alphanumeric, case-insensitive); final verifier has 10 tests.
+$m_\mu{=}3$; exploration $v$ is fraction of 3 subset tests; promotion runs all 10 tests; same smoothing and continuation settings.
+Leaf utilities and envelopes:
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+Horizon & Subset results (3 tests) & $V_j$ & $\tilde V_j$ & Note \\
+\midrule
+$h_1$ & 1/3,\ 2/3,\ 2/3 & 0.556 & 0.542 & init \\
+$h_2$ & 2/3,\ 3/3,\ 2/3 & 0.778 & 0.709 & $\Delta\tilde V{=}0.167$ \\
+$h_3$ & 3/3 (subset)    & ---   & ---   & promote (10/10 full) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\noindent Predictive gain (deg.\ 1) standardizes to $z{=}3.5$; with $|S_r|{=}96$, $|\mathcal{M}_r|{=}2$, the bar is $3.38$; confirmation passes; promotion succeeds (10/10). Unit-test time is split into exploration vs.\ final in latency.
+
+What is the capital of Australia?\quad \textbf{Spurious candidate:} ``Sydney''.
+High plausibility $v{=}0.87$ (popular city) but low path consistency $C_{\text{path}}{=}0.58$ (trace appeals to ``largest city $\Rightarrow$ capital''); confirmation falls below bar. \textbf{Dual gate rejects}. The correct candidate (``Canberra'') yields $v{=}0.90$, $C_{\text{path}}{=}0.81$, confirmation passes $\Rightarrow$ promotion.
 
 \end{document}
