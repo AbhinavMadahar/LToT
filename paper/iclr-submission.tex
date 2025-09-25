@@ -36,11 +36,11 @@ The architectural move is to separate \emph{consistency/continuability} from \em
 This idea echoes ``lateral thinking'' \citep{debono1967lateral}: rather than deepening a few promising threads, maintain wide, low--commitment exploration that can be \emph{promoted} the instant it proves itself. We introduce \textbf{Lateral Tree--of--Thoughts (LToT)}, a drop--in search--time controller that operationalizes the thesis above.
 
 The design converts extra tokens into \emph{principled diversity} where it is cheapest: lateral width.
-A simple cost law shows that LR--SC's lateral spend is $\Theta(N\log N)$ in initial width $N$ (constant cost per rung and $O(\log N)$ rungs), while mainlines would grow exponentially with depth if left uncapped.
+A simple cost law shows that LR--SC's lateral spend is $\Theta(N_0\log_{\eta} N_0)$ in initial width $N_0$ (constant cost per rung and $O(\log_{\eta} N_0)$ rungs), while mainlines would grow exponentially with depth if left uncapped.
 By allocating on \emph{marginal improvement} rather than level, LR--SC rescues branches that a single noisy utility reading would discard, while width--aware thresholds prevent ``lucky spikes'' from polluting mainlines.
 In aggregate, LToT mitigates breadth saturation and depth myopia without inflating compute. We propose LToT, a controller that keeps mainlines narrow and pushes exploration laterally through LR--SC---a successive--halving race with short--circuit promotion, robust order--aware detection, and freeze--thaw survivors. We bind promotion to verifier--aligned outcomes (exact match/tests for math/code) and introduce a dual gate for QA (plausibility and path consistency), reducing mainline contamination under noisy evaluators. We derive width--aware bars (sub--Gaussian, sub--Gamma, and sub--Weibull variants) and a repeat--to--confirm rule that keep false promotions bounded as lateral width grows; we also handle correlation via an effective width.
 
-\noindent We prove a pseudolinear lateral cost law $\Theta(N\log N)$, logarithmic rung depth, and error bounds under mild tail assumptions, and contrast this with exponential growth in uncapped mainlines. Across math (GSM variants, MATH--500), code (HumanEval/MBPP--lite), and a canonical ToT puzzle (Game of 24), LToT improves Success@1/Pass@1 at matched compute over CoT, vanilla ToT, and MCTS with progressive widening \citep{xie2024mcts}, while lowering false promotions and time--to--first--hit via short--circuiting.
+\noindent We prove a pseudolinear lateral cost law $\Theta(N_0\log_{\eta} N_0)$, logarithmic rung depth, and error bounds under mild tail assumptions, and contrast this with exponential growth in uncapped mainlines. Across math (GSM variants, MATH--500), code (HumanEval/MBPP--lite), and a canonical ToT puzzle (Game of 24), LToT improves Success@1/Pass@1 at matched compute over CoT, vanilla ToT, and MCTS with progressive widening \citep{xie2024mcts}, while lowering false promotions and time--to--first--hit via short--circuiting.
 
 LToT complements inference--time scaling via best--of--$n$ \citep{chen2024bot,yang2024bot} and revising/self--improvement \citep{madaan2023selfrefine}, and sits alongside program/tool--aided reasoning \citep{gao2022pal,chen2022pot}.
 Its novelty is not another search heuristic but a \emph{control principle}: separate consistency from utility; allocate on marginal improvement; and convert surplus compute into lateral breadth with guarantees.
@@ -106,7 +106,7 @@ Although CoT often boosts task accuracy, generated rationales may be unfaithful 
 
 Finally, techniques such as Skeleton‑of‑Thought prompt models to outline and then expand subparts in parallel, reducing latency while sometimes improving quality \citep{ning2023sot}. Orthogonal to latency, LToT targets \emph{exploration completeness}: by laterally preserving logically consistent branches, it trades small additional compute for a disproportionate increase in the chance of reaching globally consistent solutions under bounded budgets.
 
-We adopt a successive-halving (racing) backbone solely to control lateral cost (pseudolinear $\Theta(N\log_\eta N)$, logarithmic rungs).
+We adopt a successive-halving (racing) backbone solely to control lateral cost (pseudolinear $\Theta(N_0\log_\eta N_0)$, logarithmic rungs).
 The novelty in LToT lies in reasoning-specific \emph{control rules} layered atop this backbone:
 (i) compute-normalized predictive continuation on branch envelopes (local polynomial forecast);
 (ii) width-aware thresholds with confirmation to control max-of-many effects;
@@ -312,7 +312,7 @@ Importantly, the result holds regardless of the horizon growth schedule, as long
 
 The number of rungs required to reduce $N_0$ laterals to $O(1)$ survivors is
 $R=\lceil \log_\eta N_0\rceil$, i.e., logarithmic in lateral width.
-Thus LR-SC is \emph{wide and short}: constant per-rung cost and $\Theta(\log N_0)$ rungs.
+Thus LR-SC is \emph{wide and short}: constant per-rung cost and $\Theta(\log_{\eta} N_0)$ rungs.
 
 If at each mainline layer we admit a fixed fraction $a$ of $k$ children (effective reproduction $r_{\text{main}}=ak>1$), then expansions to depth $D$ are $\Theta(r_{\text{main}}^D)$ (exponential).
 With a beam/width cap $W$, mainline cost becomes $\Theta(D\,W\,k)$ (linear in depth).
@@ -367,7 +367,7 @@ We design experiments to test whether LToT resolves the concrete problems raised
 (1) \emph{utility saturation} under broad sampling; (2) \emph{myopic pruning} of longer-horizon but consistent branches; and
 (3) \emph{noisy/nonstationary evaluators} that require sequential, uncertainty-aware allocation.
 We also validate the cost claims in Secs.~\ref{sec:lrscr}--\ref{sec:theory}:
-near-constant per-rung cost, $\Theta(\log_\eta N)$ rungs, and overall $\Theta(N\log_\eta N)$ lateral cost.
+near-constant per-rung cost, $\Theta(\log_\eta N_0)$ rungs, and overall $\Theta(N_0\log_\eta N_0)$ lateral cost.
 We select four benchmarks that collectively stress breadth, long-horizon payoffs, and verifiable correctness.
 All tasks use \emph{exact or programmatic verification} to define the utility $v$ for promotion (Sec.~\ref{sec:promotion}).
 
@@ -429,7 +429,7 @@ Success@1 for math/QA (exact-match), pass@1 for code (tests), and success rate f
 We also report:
 (i) \emph{time-to-first-correct} (median expansions until a verified correct branch appears);
 (ii) \emph{false promotions} (\% of proposed promotions failing verification, where applicable);
-(iii) \emph{cost fit} ($\mathrm{Expansions}$ vs.\ $a\,N\log_\eta N + b$); and
+(iii) \emph{cost fit} ($\mathrm{Expansions}$ vs.\ $a\,N_0\log_\eta N_0 + b$); and
 (iv) \emph{width scaling} at fixed total compute (vary $N_0$).
 
 We use $\eta{=}4$, $b_0{\in}\{1,2\}$ expansions, $b_{\text{micro}}{=}1$, $\rho{\in}[0.1,0.2]$, $\kappa{\approx}1$, $\delta$ a small margin over the mainline bar, geometric horizons $(1,2,4,\dots)$ under the budget cap (Sec.~\ref{sec:lrscr}).
@@ -545,7 +545,7 @@ Short-circuit promotion (Sec.~\ref{sec:lrscr}) reduces the median expansions req
 \vspace{0.3em}
 \begin{tabular}{lccc}
 \toprule
- & \textbf{$R^2$ fit to $a\,N\log_\eta N{+}b$} & \textbf{Mean rung cost CV} & \textbf{\# rungs (mean $\pm$ sd)} \\
+ & \textbf{$R^2$ fit to $a\,N_0\log_\eta N_0{+}b$} & \textbf{Mean rung cost CV} & \textbf{\# rungs (mean $\pm$ sd)} \\
 \midrule
 S (8B)  & 0.991 & 0.07 & $5.1 \pm 0.5$ \\
 M (Mix) & 0.987 & 0.08 & $4.8 \pm 0.6$ \\
@@ -554,7 +554,7 @@ M (Mix) & 0.987 & 0.08 & $4.8 \pm 0.6$ \\
 \label{tab:cost-fit}
 \end{table}
 
-Measured expansions fit $a\,N\log_\eta N{+}b$ with $R^2{>}0.98$; per-rung cost is nearly constant (CV $\sim$0.07--0.08), and the number of rungs concentrates around $\lceil\log_\eta N_0\rceil$ (Table~\ref{tab:cost-fit}).
+Measured expansions fit $a\,N_0\log_\eta N_0{+}b$ with $R^2{>}0.98$; per-rung cost is nearly constant (CV $\sim$0.07--0.08), and the number of rungs concentrates around $\lceil\log_\eta N_0\rceil$ (Table~\ref{tab:cost-fit}).
 This empirically validates the \emph{wide-and-short} cost story in Sec.~\ref{sec:theory}.
 
 \begin{table}[t]
