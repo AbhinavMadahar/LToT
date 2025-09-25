@@ -60,34 +60,25 @@ If one does not cap mainline width, the expected number of mainline nodes at dep
 By contrast, controlling \emph{lateral} width with successive-halving (LR-SC; Sec.~\ref{sec:lrscr}) yields a total lateral exploration cost of $\Theta(N_0 \log_{\eta} N_0)$ for initial lateral width $N_0$ and culling factor $\eta>1$—\emph{pseudolinear in width}.
 This asymmetry suggests an architectural principle:
 \emph{keep mainlines narrow to avoid depth explosion and push width into laterals where it is cheap.}
-Three trends sharpen the pain points above:
-\begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
-    \item \textbf{Bigger inference budgets.} Multi-round agents, tool calls, and safety-/verification-time checks raise the tolerated per-query compute. Without a controller that can convert budget into \emph{productive} breadth, ToT saturates early and the marginal return of extra tokens collapses.
-    \item \textbf{Longer-horizon tasks.} Program synthesis, multi-hop reasoning, and formal verification increasingly require sequences where payoff emerges only after several structured steps. Myopic pruning removes precisely those candidates that need a few steps of nurturing.
-    \item \textbf{Noisier, nonstationary evaluators.} Practical utility scores $v$ (even when outcome-aligned) fluctuate across depths and task regimes. A fixed, level-based gate conflates noise with signal; sequential allocation based on \emph{marginal value of compute} is needed.
-\end{enumerate}
+Three trends sharpen the pain points above.
+
+\noindent As budgets per query rise, multi‑round agents, tool use, and safety/verification passes make higher spend acceptable; yet, without a controller that converts extra tokens into \emph{productive breadth}, vanilla ToT quickly saturates and the marginal return of compute collapses. The problem is amplified as more tasks exhibit long horizons: program synthesis, multi‑hop reasoning, and formal verification often require several structured steps before $v$ improves, so naive pruning disproportionately excises precisely those candidates that need brief nurturing. Compounding this, practical evaluators $v$ are noisy and non‑stationary across depth and domain; a fixed, level‑based gate conflates noise with signal, so allocation must track the \emph{marginal value of compute} rather than a single snapshot.
+
 
 Let a candidate node $x$ have an (unobserved) eventual value $\mu(x)$ if its branch were fully developed.
 An early evaluator observes $v(x) = \mu(x) - \lambda \,\Delta(x) + \varepsilon$, where $\Delta(x)$ is the (unknown) remaining steps to payoff, $\lambda>0$ captures horizon bias, and $\varepsilon$ is evaluator noise.
 When $\Delta(x)$ is moderate, $v(x)$ may fall below the mainline gate despite large $\mu(x)$.
 A controller that reasons about \emph{improvement after a small investment}—rather than $v(x)$ in isolation—can \emph{defer judgment}, test whether $x$ starts producing high-$v$ descendants quickly, and only then commit budget.
-To resolve saturation and myopia under large budgets, a search-time controller should:
-\begin{enumerate}[leftmargin=*, itemsep=2pt, topsep=2pt]
-    \item \textbf{Allocate on marginal gain (not level).} Decide to continue a branch based on compute-normalized improvement of an envelope $V(\cdot)$ over a short, controlled lookahead; gate on robust trend (slope/curvature), not a single $v$ reading.
-    \item \textbf{Be wide but short.} Support very large \emph{lateral} width $N_0$ with near-constant cost per rung and only $\Theta(\log_{\eta} N_0)$ rungs; immediately \emph{short-circuit} back to exploitation when any lateral reaches the mainline bar.
-    \item \textbf{Keep mainlines narrow.} Beam- or quota-cap mainlines to prevent $(ak)^D$ depth blow-up; re-open exploration only when exploitation \emph{plateaus} in compute-normalized progress.
-    \item \textbf{Promote only on outcome.} Bind promotion to $v$ that is as verifier-aligned as possible (tests, checkers, exact answers), so logically inconsistent but speciously plausible branches do not pollute the mainline.
-    \item \textbf{Control multiplicity.} As lateral width grows, guard against winner's-curse spikes with width-aware thresholds and a cheap repeat-to-confirm step.
-\end{enumerate}
+\noindent The remedy is to decide continuation on \emph{compute‑normalized} improvement—the observed slope (and curvature) of $v$ as budget increases—rather than an absolute $v$ at a preselected level. This steers budget toward branches whose incremental yield remains positive and away from ones whose progress has flattened.
 
-LToT operationalizes the desiderata above with two ingredients (see Sec.~\ref{section:architecture-design}):
+\noindent Exploration should be wide but short: spread tiny probes across a very large lateral set, cull aggressively, and snap back to exploitation the moment any lateral reaches the \emph{mainline bar}. Keep mainlines narrow via beam or quota caps to avoid the $(ak)^D$ depth blow‑up, and re‑open exploration when exploitation \emph{plateaus} in compute‑normalized progress. Promote only on outcomes validated by a $v$ that is as outcome‑aligned as possible so that speciously plausible branches do not contaminate the mainline. As lateral width grows, control multiplicity by deduplicating near‑duplicates, using width‑aware thresholds, and adding a cheap repeat‑to‑confirm step so that evidence is not double‑counted.
+
+
+LToT operationalizes these desiderata with two ingredients (see Sec.~\ref{section:architecture-design}):
 (i) a \emph{dual-score frontier} that retains logically consistent, low-$v$ \emph{laterals} alongside high-$v$ \emph{mainlines}, deferring judgment on laterals; and
 (ii) a budgeted racing procedure, \emph{LR-SC}, that allocates tiny probes across a very wide lateral set, culls aggressively, and \emph{promotes} a lateral to the exploitation set the moment its envelope reaches the mainline bar.
 Theoretical analyses (Sec.~\ref{sec:theory}) show that LR-SC keeps lateral cost \emph{pseudolinear in width} ($\Theta(N_0\log_{\eta} N_0)$) while mainlines, if left uncapped, are exponential in depth; hence LToT converts surplus compute into principled diversity exactly where it is cheapest.
 
-Frontier inference will keep offering more budget per query before training-time improvements alone solve long-horizon reliability.
-Without a controller, that budget is spent on near-duplicates (saturation) or discarded candidates that only need a few steps (myopia).
-LToT provides the missing mechanism: \emph{defer judgment} on consistent but low-$v$ ideas, \emph{test them cheaply and in parallel}, and \emph{promote immediately} when they prove themselves—while keeping provable control over compute and errors.
 
 \section{Related Work}
 \label{section:prior-work}
