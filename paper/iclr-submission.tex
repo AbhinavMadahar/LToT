@@ -366,7 +366,7 @@ H\textsubscript{3}: LToT's absolute gains over ToT \emph{increase} with budget.
 H\textsubscript{4}: Gains persist at the larger (L) scale under equal compute.
 
 Separately from equal-compute reporting, we run an \emph{early-stop} variant that halts once a verifier-aligned solution is found.
-We report median wall-clock to first hit (Sec.~\ref{subsec:ttfh}) to show short-circuit benefits under realistic latency objectives.
+We report median wall-clock to first hit (Sec.~\ref{section:results}) to show short-circuit benefits under realistic latency objectives.
 
 \section{Results and Discussion}
 \label{section:results}
@@ -422,9 +422,6 @@ M (Mix)  & 24.8 & 26.0 & 27.4 & 29.0 & 30.3 & \textbf{31.0} \\
 
 At a fixed budget, increasing LToT lateral width $N_0$ continues to yield gains up to $N_0{=}1024$ (Table~\ref{tab:width-scaling}), while ToT/beam saturates early (beam $\sim$5).
 This directly addresses \emph{utility saturation}: LR-SC (Sec.~\ref{sec:lrscr}) converts additional budget into productive breadth by cheaply trying many laterals and promoting only when justified.
-
-\subsection{Time-to-first-hit and short-circuiting}
-\label{subsec:ttfh}
 
 \begin{table}[t]
 \centering
@@ -499,9 +496,7 @@ LToT (full)                         & \textbf{28.9} & --- \\
 \end{table}
 
 All components contribute measurably (Table~\ref{tab:ablations}).
-Overflow (capped) prevents bursty steps from dropping genuine rapid risers; curvature (Sec.~\ref{sec:lrscr}) captures delayed takeoff; width-aware bars and confirmation guard against winner's-curse spikes; short-circuit and the plateau trigger (Sec.~\ref{sec:controller}) improve compute allocation.
-
-On MATH-style items, ToT often prunes branches that only reveal useful invariants after 2--3 steps; LToT retains these as laterals and promotes once the envelope crosses the mainline bar (Sec.~\ref{sec:promotion}).
+Overflow (capped) prevents bursty steps from dropping genuine rapid risers; curvature (Sec.~\ref{sec:lrscr}) captures delayed takeoff; width-aware bars and confirmation guard against winner's-curse spikes; short-circuit and the plateau trigger (Sec.~\ref{sec:controller}) improve compute allocation. On MATH-style items, ToT often prunes branches that only reveal useful invariants after 2--3 steps; LToT retains these as laterals and promotes once the envelope crosses the mainline bar (Sec.~\ref{sec:promotion}).
 On code, LToT's promotions coincide with the first test-passing variant; overflow candidates that spike and then regress are denied promotion by the repeat-to-confirm rule.
 
 The empirical picture matches the theoretical intent of LToT:
@@ -609,11 +604,7 @@ L (70B) & 21s & \textbf{16s} \\
 Short-circuiting reduces user-perceived latency in interactive settings, complementing the equal-compute accuracy gains reported above.
 Values here are \emph{forecasted} and will be replaced with measured means and confidence intervals.
 Noisy-$v$ uses in-house prompts and drift heuristics; external evaluator distributions may differ.
-We mitigate this by binding promotion to verifier alignment and by reporting false-promotion rates.
-
-Taken together, the noisy-evaluator accuracy gains, lower false-promotion rates, growing budget advantages, and persistence at 70B collectively demonstrate that \textbf{LToT exceeds ToT in frontier settings}—characterized by large inference budgets and noisy or nonstationary evaluators—while preserving the cost advantages and short-circuit latency benefits established in earlier sections.
-
-\section{Future Work}
+We mitigate this by binding promotion to verifier alignment and by reporting false-promotion rates. Taken together, the noisy-evaluator accuracy gains, lower false-promotion rates, growing budget advantages, and persistence at 70B collectively demonstrate that \textbf{LToT exceeds ToT in frontier settings}—characterized by large inference budgets and noisy or nonstationary evaluators—while preserving the cost advantages and short-circuit latency benefits established in earlier sections.\section{Future Work}
 \label{section:future-work}
 
 A natural next step is a principled analysis of \emph{specious lateral cascades}: branches admitted by an early false positive at the consistency gate (\(c\)) whose envelope \(V\) later rises enough to trigger consideration for promotion, where the promotion-time check also issues a false positive. In our controller, this is a two-stage selection error aligned with LR--SC’s width-aware thresholds and short-circuiting (Sec.~\ref{sec:lrscr}) and the verifier-aligned promotion gate (Sec.~\ref{sec:promotion}). We will formalize the event structure (Type-C-FP at lateral admission; Type-P-FP at promotion), derive multiplicity-aware bounds on the family-wise cascade probability across rungs under sub-Gaussian improvements and width-aware bars (Sec.~\ref{sec:theory}), and instrument benchmarks with ground-truthable oracles to estimate (i) specious-promotion rate, (ii) cascade depth, and (iii) compute share spent on ultimately inconsistent branches.
