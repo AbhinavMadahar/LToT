@@ -10,6 +10,8 @@
 \usepackage{enumitem}
 \usepackage{url}
 \usepackage{placeins}
+\usepackage{caption}  % control spacing in captions
+\captionsetup[table]{aboveskip=3pt,belowskip=2pt,skip=2pt}  % keep table footprint tight
 \usepackage{hyperref}
 
 % Uncomment for camera-ready; keep commented for anonymous review.
@@ -19,7 +21,25 @@
 
 % \author{Abhinav Madahar \\ Independent Computer Scientist \\ \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}}
 
+% ---- Tight float spacing: use paragraph spacing when available ----
+\makeatletter
+\ifdim\parskip>0pt
+  \setlength{\intextsep}{\parskip}% space around in-text floats
+  \setlength{\textfloatsep}{\parskip}% space above/below top/bottom floats
+  \setlength{\floatsep}{.5\parskip}% between floats
+  \setlength{\dbltextfloatsep}{\parskip}% two-column top/bottom
+  \setlength{\dblfloatsep}{.5\parskip}% between dbl floats
+\else
+  \setlength{\intextsep}{6pt plus 2pt minus 2pt}% fallback if \parskip=0pt
+  \setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+  \setlength{\floatsep}{4pt plus 2pt minus 1pt}
+  \setlength{\dbltextfloatsep}{6pt plus 2pt minus 2pt}
+  \setlength{\dblfloatsep}{4pt plus 2pt minus 1pt}
+\fi
+\makeatother
+% ------------------------------------------------------------------
 \begin{document}
+\raggedbottom  % reduce large bottom whitespace from page equalization
 
 \maketitle
 
