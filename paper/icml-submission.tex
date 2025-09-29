@@ -1,47 +1,68 @@
 \documentclass{article}
-\usepackage{iclr2025_conference,times}
+% \usepackage{iclr2025_conference,times}
+\usepackage[accepted]{icml2025}
+% --- Algorithms: prefer algpseudocode (algorithmicx) without conflicts ---
+% ICML kit may load 'algorithm' + 'algorithmic'. We neutralize the legacy
+% 'algorithmic' and then load 'algpseudocode' so \State, \If, \While, ... work.
+\makeatletter
+\@ifpackageloaded{algorithmic}{%
+  \let\algorithmic\relax
+  \let\endalgorithmic\relax
+}{}
+\makeatother
+
+% Float environment (safe either way)
+\usepackage{algorithm}
+
+% Pseudocode macros used in this manuscript
+\usepackage{algpseudocode}  % <-- spelling: algpseudocode (not "algpsuedocode")
 
 % --- Core packages compatible with pdflatex + natbib ---
 \usepackage{amsmath}
 \usepackage{amssymb}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+% \usepackage{algorithm}
+% \usepackage{algpseudocode}
 \usepackage{booktabs}
 \usepackage{enumitem}
 \usepackage{url}
 \usepackage{placeins}
 \usepackage{caption}  % control spacing in captions
-\captionsetup[table]{aboveskip=3pt,belowskip=2pt,skip=2pt}  % keep table footprint tight
+% \captionsetup[table]{aboveskip=3pt,belowskip=2pt,skip=2pt}  % keep table footprint tight
 \usepackage{hyperref}
 
-% Uncomment for camera-ready; keep commented for anonymous review.
-% \iclrfinalcopy
+% Uncomment for camera-ready; keep commented for anonymous re% view.
+% % \iclrfinalcopy
+%
+% \title{Lateral~Tree\mbox{-}of\mbox{-}Thoughts Surpasses ToT by Incorporating Logically\mbox{-}Consistent, Low\mbox{-}Utility Candidates}
 
-\title{Lateral~Tree\mbox{-}of\mbox{-}Thoughts Surpasses ToT by Incorporating Logically\mbox{-}Consistent, Low\mbox{-}Utility Candidates}
+% % \author{Abhinav Madahar \\ Independent Computer Scientist \\ \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}}
 
-% \author{Abhinav Madahar \\ Independent Computer Scientist \\ \href{mailto:abhinavmadahar@gmail.com}{abhinavmadahar@gmail.com}}
-
-% ---- Tight float spacing: use paragraph spacing when available ----
-\makeatletter
-\ifdim\parskip>0pt
-  \setlength{\intextsep}{\parskip}% space around in-text floats
-  \setlength{\textfloatsep}{\parskip}% space above/below top/bottom floats
-  \setlength{\floatsep}{.5\parskip}% between floats
-  \setlength{\dbltextfloatsep}{\parskip}% two-column top/bottom
-  \setlength{\dblfloatsep}{.5\parskip}% between dbl floats
-\else
-  \setlength{\intextsep}{6pt plus 2pt minus 2pt}% fallback if \parskip=0pt
-  \setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
-  \setlength{\floatsep}{4pt plus 2pt minus 1pt}
-  \setlength{\dbltextfloatsep}{6pt plus 2pt minus 2pt}
-  \setlength{\dblfloatsep}{4pt plus 2pt minus 1pt}
-\fi
-\makeatother
+% (removed ICLR-specific tight float spacing to comply with ICML format)
 % ------------------------------------------------------------------
-\begin{document}
-\raggedbottom  % reduce large bottom whitespace from page equalization
 
-\maketitle
+% ICML running title
+\icmltitlerunning{Lateral Tree-of-Thoughts Surpasses ToT by Incorporating…}
+\begin{document}
+% \raggedbottom  % reduce large bottom whitespace from page equalization (disabled for ICML)
+
+
+% == ICML front matter ==
+\twocolumn[
+\icmltitle{Lateral~Tree\mbox{-}of\mbox{-}Thoughts Surpasses ToT by Incorporating Logically\mbox{-}Consistent, Low\mbox{-}Utility Candidates}
+
+% It is okay to include author info: it will be hidden unless [accepted] is used.
+\begin{icmlauthorlist}
+\icmlauthor{Abhinav Madahar}{ind}
+\end{icmlauthorlist}
+\icmlaffiliation{ind}{Independent Computer Scientist}
+\icmlcorrespondingauthor{Abhinav Madahar}{abhinavmadahar@gmail.com}
+% \icmlkeywords{Machine Learning, ICML}
+
+\vskip 0.3in
+]
+% \printAffiliationsAndNotice{} % leave blank if no need to mention equal contribution
+% == End ICML front matter ==
+
 
 \begin{abstract}
 Modern deployments increasingly budget \emph{large test-time compute}---thousands of tokens or many node expansions---to improve reliability. When \emph{structured search} (e.g., ToT/MCTS-style controllers) is run under such frontier-like conditions, two effects intensify: \emph{breadth saturation}, where additional samples at a node mostly yield near-duplicates so width stops growing; and \emph{myopia}, where early, noisy utility undervalues branches whose payoff appears only after a few more steps, so they are pruned too soon. We introduce \textbf{Lateral Tree-of-Thoughts (LToT)}, a search-time controller that explicitly separates the frontier into \emph{mainlines}---\emph{high-utility} candidates used for exploitation---and \emph{laterals}---\emph{logically consistent, initially low-utility} candidates that merit short, cheap probes before judgment. LToT explores laterals via \emph{Lateral Racing with Short-Circuit (LR--SC)}, a budgeted race that spreads tiny probes across a very wide lateral set, culls aggressively, and immediately promotes a branch once it demonstrably clears the mainline bar; mainlines are kept intentionally narrow so surplus compute is invested where width is cheap. This turns large budgets into principled diversity while preserving promotion discipline. Let $N_{0}$ denote the \emph{initial lateral width} (the number of laterals admitted to the race) and $\eta>1$ the \emph{culling factor} between rungs. We show a \emph{pseudolinear lateral cost} $\Theta(N_{0}\log_{\eta}N_{0})$ with logarithmically many rungs. Pseudolinearity matters because it allows lateral width to scale almost linearly in cost, so increasing budgets buy \emph{coverage} rather than redundant deepening. Under \emph{equal compute}, we evaluate on GSM-Hard/Plus, MATH-500, HumanEval, MBPP-lite, and Game-of-24, reporting Success@1/Pass@1, width scaling, \emph{time-to-first-verified} solution, and \emph{false-promotion} rates. Across math, code, and ToT-style puzzles, LToT improves or matches accuracy while \emph{reducing expansions-to-first-hit}, converting surplus test-time compute into \emph{productive breadth} without sacrificing selectivity.
@@ -639,8 +660,10 @@ LToT reframes inference--time reasoning as width--first search: keep mainlines n
 
 % ---- BibTeX with natbib (ICLR style) ----
 \FloatBarrier
-\bibliographystyle{iclr2025_conference}
-\bibliography{iclr-submission}  % matches paper/iclr-submission.bib
+\bibliographystyle{icml2025}
+\bibliography{icml-submission}  % matches paper/iclr-submission.bib
+\section*{Acknowledgments}
+We thank Emanuele La Malfa for valuable discussions on this project and for offering compute resources to support it.
 
 \appendix
 
