@@ -4,9 +4,9 @@ WHITE_PAPER_BIB_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-
 WHITE_PAPER_LOG_FILE_PATH = 'reports/introductory-overview/ltot-an-introductory-overview.log'
 
 ICLR_SUBMISSION_DESTINATION_FILE_PATH = 'paper/Lateral Tree-of-Thoughts Surpasses ToT by Incorporating Logically-Consistent, Low-Utility Candidates (Abhinav Madahar).pdf'
-ICLR_SUBMISSION_TEX_FILE_PATH = 'paper/iclr-submission.tex'
-ICLR_SUBMISSION_BIB_FILE_PATH = 'paper/iclr-submission.bib'
-ICLR_SUBMISSION_LOG_FILE_PATH = 'paper/iclr-submission.log'
+ICLR_SUBMISSION_TEX_FILE_PATH = 'paper/icml-submission.tex'
+ICLR_SUBMISSION_BIB_FILE_PATH = 'paper/icml-submission.bib'
+ICLR_SUBMISSION_LOG_FILE_PATH = 'paper/icml-submission.log'
 
 
 rule all:

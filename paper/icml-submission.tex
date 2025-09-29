@@ -24,6 +24,7 @@
 % \usepackage{algpseudocode}
 \usepackage{booktabs}
 \usepackage{enumitem}
+\usepackage{graphicx}
 \usepackage{url}
 \usepackage{placeins}
 \usepackage{caption}  % control spacing in captions
@@ -42,6 +43,7 @@
 
 % ICML running title
 \icmltitlerunning{Lateral Tree-of-Thoughts Surpasses ToT by Incorporating…}
+\setlength{\emergencystretch}{3em}
 \begin{document}
 % \raggedbottom  % reduce large bottom whitespace from page equalization (disabled for ICML)
 
@@ -152,6 +154,7 @@ Ablations and SH-only baselines (Sec.~\ref{section:experiments}) show that the b
 \begin{table}[t]
 \centering
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}p{2.9cm}p{3.0cm}p{6.7cm}@{}}
 \toprule
 \textbf{LToT element} & \textbf{Closest prior} & \textbf{What is different here} \\
@@ -164,6 +167,7 @@ Freeze--thaw laterals & Freeze--thaw BO & Applied to reasoning traces with cache
 Dual-score frontier & --- & Distinguishes high-$v$ mainlines vs.\ high-$c$, low-$v$ laterals \\
 \bottomrule
 \end{tabular}
+}
 \caption{Cross-walk: LToT control rules vs.\ racing backbones.}
 \end{table}
 \section{Architecture Design}
@@ -194,8 +198,8 @@ $s_{\text{constraints}}$ encodes simple domain invariants (e.g., no new free var
 If a component is unavailable we reweight the remaining terms proportionally; when $s_{\text{logic}}$ carries $\lambda_1\ge 0.7$ we tighten the promotion gate in Sec.~\ref{sec:promotion} by raising the path-consistency threshold by $+0.1$ and requiring one-step re-derivation.
 We aggregate consistency along a branch $i$ of length $h$ via a robust \emph{path-consistency} score
 \begin{equation}
-C_{\text{path}}(i,h)\;=\;\min\!\Big\{\operatorname{Quantile}_{q}\big(\{c_{\text{local}}(x_j)\}_{j\le h}\big),\ \overline{c}_{\text{local}}(i,h)\Big\},
-\qquad q=0.25,
+\resizebox{\columnwidth}{!}{$C_{\text{path}}(i,h)\;=\;\min\!\Big\{\operatorname{Quantile}_{q}\big(\{c_{\text{local}}(x_j)\}_{j\le h}\big),\ \overline{c}_{\text{local}}(i,h)\Big\},
+\qquad q=0.25,$}
 \end{equation}
 which is distribution-free and stable for short paths. (A mean$-$MAD variant appears in App.~\ref{app:robust-eval}.)
 Each branch $i$ maintains a tiny \emph{micro-beam} of size $m_{\mu}$ leaves at each horizon.
@@ -229,7 +233,7 @@ These quantities let us reason about \emph{marginal value of compute}, not just 
 \vspace{0.5em}
 \subsection{Controller overview}\label{sec:controller} LToT alternates between: Expand nodes from $M_t$ while a compute-normalized progress statistic (e.g.,  an EWMA of $\Delta B_t$ per unit compute) exceeds a plateau threshold. This keeps mainlines narrow (beam- or quota-capped). When exploitation plateaus, run \emph{Lateral Racing with Short-Circuit (LR-SC)} over the lateral pool: a successive-halving style race with (i) width-aware promotion thresholds, (ii) micro-probe budgets for overflow, and (iii) \emph{short-circuit} back to exploitation immediately when a lateral branch reaches the mainline bar. Non-promoted lateral survivors are \emph{frozen} and can be \emph{thawed} (resumed) in later exploration phases; we resume each survivor at its previous probe depth/rung.
 
-\begin{algorithm}[t]
+\begin{algorithm*}[t]
 \caption{LToT controller (high level)}
 \label{alg:ltot-controller}
 \begin{algorithmic}[1]
@@ -245,7 +249,7 @@ These quantities let us reason about \emph{marginal value of compute}, not just 
   \EndIf
 \EndWhile
 \end{algorithmic}
-\end{algorithm}\vspace{-0.5em}
+\end{algorithm*}\vspace{-0.5em}
 
 \subsection{LR-SC: overflow-capped racing with short-circuit}\label{sec:lrscr} Let $N$ be the active lateral width. LR-SC proceeds in rungs $r=0,1,\dots$ with \emph{culling factor} $\eta>1$. At rung $r$ we (i) keep the top quota $Q_r=\lfloor |S_r|/\eta \rfloor$ by a robust score, (ii) also retain any \emph{rapid-riser} exceeding a width-aware bar (overflow), but give overflow branches only a \emph{micro-probe}, and (iii) \emph{short-circuit} to exploitation immediately when any branch meets the promotion bar. Specifically, for branch $i$ at rung $r$ we compute a compute-normalized improvement $g_i$ (using $V_i$) and a robust standardization $z_i$ (e.g., subtract rung median and divide by a MAD-like scale). To control ``max-of-many'' effects as width grows, we admit \emph{rapid-risers} via a width-aware bar: \[ z_i \;\ge\; \underbrace{\kappa \sqrt{2\log |S_r|}}_{\text{width penalty}} + \delta, \] with $\kappa\approx 1$ and a margin $\delta>0$. We optionally standardize scores within parent-depth bands to compare fairly across heterogeneous depths. We cap the total micro-probe budget for overflow per rung to a small fraction $\rho$ of the rung budget (e.g., $\rho\in[0.1,0.2]$), ensuring per-rung cost stays near constant. We view $\tilde V_i$ as locally smooth in compute and fit a robust degree-$m$ polynomial ($m\!\in\!\mathcal{M}_r$) to the last $W\in\{3,4\}$ points $\{(h,\tilde V_i(h))\}$ in local coordinates. We then forecast the next compute-normalized improvement $\widehat{s}^{\mathrm{pred}}_{i,m}=\big(\widehat{\Delta \tilde V}_i / \Delta C\big)$, standardize it (robust $z$ within the rung), and \emph{admit} $i$ if
 
@@ -254,7 +258,7 @@ These quantities let us reason about \emph{marginal value of compute}, not just 
 \end{equation}
 This is followed by a one-step \emph{repeat-to-confirm} micro-probe with independent randomization. We default to $\mathcal{M}_r{=}\{1,2\}$ for stability (slope or slope+curvature) and expose $m{=}3$ only in an ablation. We view $V_i$ as a function of horizon/compute and continue branch $i$ if a discrete derivative of order $m\in\{1,\dots,M\}$ is reliably positive: \[ \widehat{\Delta^{(m)} V_i} \;\ge\; \text{bar}(|S_r|,M) \quad\text{with}\quad \text{bar}(|S_r|,M)\propto \sqrt{2\log(|S_r|\cdot M)}. \] In practice we cap $M=2$ for stability and use: \emph{(i)} first derivative (slope) $s_i = g_i(h_r,h_{r-1})$ and \emph{(ii)} second derivative (curvature) $\kappa_i = s_i(r)-s_i(r-1)$, estimated over the last few rungs and normalized by compute; a third-order check may be included in an appendix. We require \emph{repeat-to-confirm}: the condition must hold on the next micro-probe before escalation.
 
-\begin{algorithm}[t]
+\begin{algorithm*}[t]
 \caption{LR-SC (overflow-capped successive halving with short-circuit)}
 \label{alg:lrscr}
 \begin{algorithmic}[1]
@@ -268,7 +272,7 @@ This is followed by a one-step \emph{repeat-to-confirm} micro-probe with indepen
 \EndIf
 \State $S_{r+1} \leftarrow T \cup$ (confirmed overflow); $r\leftarrow r+1$; continue if budget remains.
 \end{algorithmic}
-\end{algorithm}\vspace{-0.5em}
+\end{algorithm*}\vspace{-0.5em}
 
 \subsection{Promotion and safety}
 \label{sec:promotion}
@@ -293,7 +297,7 @@ All promotion-time LM calls are charged to the rung budget, and we standardize $
 Assume rung-wise improvement statistics are sub-Gaussian with scale $\sigma$ (across branches in $S_r$). Setting the \emph{rapid-rise} bar at $\kappa\sigma\sqrt{2\log|S_r|}+\delta$ keeps the probability that any non-improving branch exceeds the bar uniformly bounded as $|S_r|$ grows (standard max-of-sub-Gaussian tail), and a one-step \emph{repeat-to-confirm} reduces it quadratically. \emph{Beyond sub-Gaussian tails.} The result extends to heavier tails. Under \emph{sub-Gamma} rung-wise noise with parameters $(\nu_r,c_r)$ we set
 
 \begin{equation}
-\texttt{bar}\big(|S_r|,|\mathcal{M}_r|;\theta_r\big)\;=\;\kappa\!\left(\sqrt{2\nu_r\log\frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}}\;+\;c_r\,\log\frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}\right)+\delta,
+\resizebox{\columnwidth}{!}{$\texttt{bar}\big(|S_r|,|\mathcal{M}_r|;\theta_r\big)\;=\;\kappa\!\left(\sqrt{2\nu_r\log\frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}}\;+\;c_r\,\log\frac{|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}\right)+\delta,$}
 \end{equation}
 For for \emph{sub-Weibull} ($\psi_\alpha$) noise we take $\texttt{bar}=K_r\!\left(\log\frac{2|S_r|\,|\mathcal{M}_r|}{\varepsilon_r}\right)^{1/\alpha}+\delta$. When branches are correlated, we replace $|S_r|$ by an \emph{effective width} $|S_r|_{\mathrm{eff}}$ estimated from cluster-robust variance inflation. We enforce probe independence in confirmation (different temperature/prompt/seed). For implementation we factor the bar into a function $\texttt{bar}(|S_r|,|\mathcal{M}_r|;\theta_r)$ used in Alg.~\ref{alg:lrscr}.
 
@@ -419,6 +423,7 @@ The tables below contain \emph{forecasted} results used to structure the analysi
 \centering
 \caption{Success@1 / Pass@1 at equal compute (S: Llama-3.1-8B, M: Mixtral-8$\times$7B). \emph{Forecasted} means (95\% CI widths omitted for brevity).}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
 \textbf{Task} & \textbf{CoT} & \textbf{ToT} & \textbf{MCTS-PW} & \textbf{LToT (ours)} \\
@@ -440,6 +445,7 @@ MBPP-lite p@1 & 65.2 & 70.8 & 71.6 & \textbf{74.2} \\
 Game of 24    & 88.1 & 92.0 & 92.7 & \textbf{95.0} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:equal-compute}
 \end{table}
 
@@ -449,8 +455,10 @@ The smaller model benefits more (e.g., +9--10 points on GSM-style math and +8--9
 
 \begin{table}[t]
 \centering
+\small
 \caption{LToT success vs.\ initial lateral width $N_0$ at fixed total compute (S/M on MATH-500). \emph{Forecasted}. ToT saturates by beam 5; not shown.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
 \textbf{Model} & $N_0{=}32$ & $64$ & $128$ & $256$ & $512$ & $1024$ \\
@@ -459,6 +467,7 @@ S (8B)   & 20.1 & 22.3 & 24.8 & 26.9 & 28.2 & \textbf{29.1} \\
 M (Mix)  & 24.8 & 26.0 & 27.4 & 29.0 & 30.3 & \textbf{31.0} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:width-scaling}
 \end{table}
 
@@ -469,6 +478,7 @@ This directly addresses \emph{utility saturation}: LR-SC (Sec.~\ref{sec:lrscr}) 
 \centering
 \caption{Median expansions to first verified correct solution (MATH-500). \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
  & \textbf{ToT} & \textbf{MCTS-PW} & \textbf{LToT (ours)} \\
@@ -477,6 +487,7 @@ S (8B)  & 46  & 41  & \textbf{28} \\
 M (Mix) & 33  & 30  & \textbf{22} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:ttfh}
 \end{table}
 
@@ -486,6 +497,7 @@ Short-circuit promotion (Sec.~\ref{sec:lrscr}) reduces the median expansions req
 \centering
 \caption{Cost fit and rung statistics (pooled across tasks). \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
  & \textbf{$R^2$ fit to $a\,N_0\log_\eta N_0{+}b$} & \textbf{Mean rung cost CV} & \textbf{\# rungs (mean $\pm$ sd)} \\
@@ -494,6 +506,7 @@ S (8B)  & 0.991 & 0.07 & $5.1 \pm 0.5$ \\
 M (Mix) & 0.987 & 0.08 & $4.8 \pm 0.6$ \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:cost-fit}
 \end{table}
 
@@ -504,6 +517,7 @@ This empirically validates the \emph{wide-and-short} cost story in Sec.~\ref{sec
 \centering
 \caption{False promotion rate (\%, lower is better) on code/math where promotion is externally verified. \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
  & \textbf{ToT} & \textbf{LToT (no bar)} & \textbf{LToT (no confirm)} & \textbf{LToT (ours)} \\
@@ -512,6 +526,7 @@ S (8B)  & 7.1  & 8.7  & 5.9  & \textbf{2.4} \\
 M (Mix) & 5.6  & 7.2  & 4.8  & \textbf{2.1} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:false-promotions}
 \end{table}
 
@@ -522,6 +537,7 @@ Removing either guard increases errors, confirming their necessity at large $N_0
 \centering
 \caption{Ablations on MATH-500 (S: 8B). \emph{Forecasted} Success@1 at equal compute.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcc}
 \toprule
 \textbf{Variant} & \textbf{Success@1} & \textbf{$\Delta$ vs.\ LToT} \\
@@ -534,6 +550,7 @@ LToT (full)                         & \textbf{28.9} & --- \\
 \quad fixed schedule (no plateau)   & 27.9 & $-1.0$ \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:ablations}
 \end{table}
 
@@ -552,6 +569,7 @@ Together these results support LToT as a principled controller that makes large 
 \centering
 \caption{\textbf{Noisy/nonstationary evaluator.} GSM-Plus Success@1 and false-promotion rate (FPR, \%) when exploration uses LM-scored $v_{\text{LM}}$; promotion remains verifier-aligned. \emph{Forecasted} means.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
  & \multicolumn{2}{c}{\textbf{ToT}} & \multicolumn{2}{c}{\textbf{LToT (ours)}} \\
@@ -563,6 +581,7 @@ M (Mix) & 71 & 8  & \textbf{77} & \textbf{3} \\
 L (70B) & 83 & 7  & \textbf{87} & \textbf{2} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:noisy-gsm}
 \end{table}
 
@@ -570,6 +589,7 @@ L (70B) & 83 & 7  & \textbf{87} & \textbf{2} \\
 \centering
 \caption{\textbf{Noisy/nonstationary evaluator.} MATH-500 Success@1 and false-promotion rate (FPR, \%). \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcccc}
 \toprule
  & \multicolumn{2}{c}{\textbf{ToT}} & \multicolumn{2}{c}{\textbf{LToT (ours)}} \\
@@ -581,6 +601,7 @@ M (Mix) & 35 & 10 & \textbf{41} & \textbf{4} \\
 L (70B) & 47 &  8 & \textbf{52} & \textbf{3} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:noisy-math}
 \end{table}
 
@@ -588,10 +609,11 @@ Under noisy $v$, LToT maintains higher accuracy at equal compute while reducing 
 The width-aware bar prevents over-admitting lucky spikes as the lateral pool grows, and the dual gate (consistency + re-derivation) filters non-causal coincidences.
 These results address the failure mode most salient in frontier deployments where verifiers are plausibility- or tool-aligned during exploration.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{\textbf{Budget sweep (GSM-Plus).} Success@1 at equal compute across three budget caps per scale. \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
  & \multicolumn{2}{c}{\textbf{Low}} & \multicolumn{2}{c}{\textbf{Med}} & \multicolumn{2}{c}{\textbf{High}} \\
@@ -603,13 +625,15 @@ M (Mix) & 66 & \textbf{68} & 71 & \textbf{76} & 74 & \textbf{84} \\
 L (70B) & 78 & \textbf{80} & 83 & \textbf{87} & 86 & \textbf{92} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:budget-gsm}
-\end{table}
+\end{table*}
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{\textbf{Budget sweep (HumanEval, pass@1).} \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
  & \multicolumn{2}{c}{\textbf{Low}} & \multicolumn{2}{c}{\textbf{Med}} & \multicolumn{2}{c}{\textbf{High}} \\
@@ -621,8 +645,9 @@ M (Mix) & 39 & \textbf{41} & 44 & \textbf{48} & 48 & \textbf{55} \\
 L (70B) & 52 & \textbf{54} & 56 & \textbf{61} & 60 & \textbf{68} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:budget-he}
-\end{table}
+\end{table*}
 
 Absolute gains increase with budget across scales (e.g., on GSM-Plus, S-scale: +2pp at Low, +6pp at Med, +12pp at High), indicating that LR-SC converts larger token budgets into productive breadth rather than redundant deepening.
 Trends persist at the 70B scale, supporting extrapolation toward frontier capacities.
@@ -631,6 +656,7 @@ Trends persist at the 70B scale, supporting extrapolation toward frontier capaci
 \centering
 \caption{Median wall-clock to first verified solution (MATH-500), when stopping at first hit. \emph{Forecasted}.}
 \vspace{0.3em}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcc}
 \toprule
  & \textbf{ToT} & \textbf{LToT (ours)} \\
@@ -640,6 +666,7 @@ M (Mix) & 30s & \textbf{22s} \\
 L (70B) & 21s & \textbf{16s} \\
 \bottomrule
 \end{tabular}
+}
 \label{tab:latency}
 \end{table}
 
