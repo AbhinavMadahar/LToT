@@ -151,10 +151,10 @@ The novelty in LToT lies in reasoning-specific \emph{control rules} layered atop
 (vi) a dual-score frontier separating high-$v$ mainlines from high-$c$, low-$v$ laterals.
 Ablations and SH-only baselines (Sec.~\ref{section:experiments}) show that the backbone alone does not yield our accuracy, false-promotion, or latency characteristics.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \small
-\resizebox{\columnwidth}{!}{%
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}p{2.9cm}p{3.0cm}p{6.7cm}@{}}
 \toprule
 \textbf{LToT element} & \textbf{Closest prior} & \textbf{What is different here} \\
@@ -169,7 +169,7 @@ Dual-score frontier & --- & Distinguishes high-$v$ mainlines vs.\ high-$c$, low-
 \end{tabular}
 }
 \caption{Cross-walk: LToT control rules vs.\ racing backbones.}
-\end{table}
+\end{table*}
 \section{Architecture Design}
 \label{section:architecture-design}
 
@@ -182,16 +182,16 @@ The controller decides when to exploit mainlines vs.\ explore laterals, and—du
 We reason over a rooted tree (or DAG) of partial traces.
 Each node $x$ is a partial solution; its children are produced by prompting the LM with $x$.
 Two evaluators score nodes:
-\[
-v(x) \in \mathbb{R} \quad \text{(utility; e.g., answer- or verifier-aligned)}, \qquad
-c(x) \in [0,1] \quad \text{(logical consistency / soundness)}.
-\]
+\begin{align*}
+&v(x) \in \mathbb{R} \quad \text{(utility; e.g., answer- or verifier-aligned)}, \qquad \\
+&c(x) \in [0,1] \quad \text{(logical consistency / soundness)}.
+\end{align*}
 We measure compute in either node expansions or tokens and denote cumulative compute by $C$.
 For any node $x$ with parent $p$, we define a \emph{local consistency} score
-\begin{equation}
-c_{\text{local}}(x)\;=\;\lambda_1\,s_{\text{logic}}(x\mid p)\;+\;\lambda_2\,s_{\text{syntax}}(x)\;+\;\lambda_3\,s_{\text{constraints}}(x),
-\qquad \lambda_j\!\ge 0,\ \sum_j \lambda_j=1,
-\end{equation}
+\begin{align*}
+c_{\text{local}}(x)&\;=\;\lambda_1\,s_{\text{logic}}(x\mid p)\;+\;\lambda_2\,s_{\text{syntax}}(x)\;\\&+\;\lambda_3\,s_{\text{constraints}}(x),\\
+&\qquad \lambda_j\!\ge 0,\ \sum_j \lambda_j=1,
+\end{align*}
 where $s_{\text{logic}}$ is an LM step-checker that validates whether the new line follows from the previous state,
 $s_{\text{syntax}}$ checks parsability/format (e.g., code compiles, expression parses), and
 $s_{\text{constraints}}$ encodes simple domain invariants (e.g., no new free variables, signature preserved).
@@ -478,7 +478,6 @@ This directly addresses \emph{utility saturation}: LR-SC (Sec.~\ref{sec:lrscr}) 
 \centering
 \caption{Median expansions to first verified correct solution (MATH-500). \emph{Forecasted}.}
 \vspace{0.3em}
-\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
  & \textbf{ToT} & \textbf{MCTS-PW} & \textbf{LToT (ours)} \\
@@ -487,17 +486,15 @@ S (8B)  & 46  & 41  & \textbf{28} \\
 M (Mix) & 33  & 30  & \textbf{22} \\
 \bottomrule
 \end{tabular}
-}
 \label{tab:ttfh}
 \end{table}
 
 Short-circuit promotion (Sec.~\ref{sec:lrscr}) reduces the median expansions required to reach a correct solution by 30--40\% (Table~\ref{tab:ttfh}), which is particularly valuable in interactive or latency-sensitive settings.
 
-\begin{table}[t]
+\begin{table*}[t]
 \centering
 \caption{Cost fit and rung statistics (pooled across tasks). \emph{Forecasted}.}
 \vspace{0.3em}
-\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
  & \textbf{$R^2$ fit to $a\,N_0\log_\eta N_0{+}b$} & \textbf{Mean rung cost CV} & \textbf{\# rungs (mean $\pm$ sd)} \\
@@ -506,9 +503,8 @@ S (8B)  & 0.991 & 0.07 & $5.1 \pm 0.5$ \\
 M (Mix) & 0.987 & 0.08 & $4.8 \pm 0.6$ \\
 \bottomrule
 \end{tabular}
-}
 \label{tab:cost-fit}
-\end{table}
+\end{table*}
 
 Measured expansions fit $a\,N_0\log_\eta N_0{+}b$ with $R^2{>}0.98$; per-rung cost is nearly constant (CV $\sim$0.07--0.08), and the number of rungs concentrates around $\lceil\log_\eta N_0\rceil$ (Table~\ref{tab:cost-fit}).
 This empirically validates the \emph{wide-and-short} cost story in Sec.~\ref{sec:theory}.
@@ -609,11 +605,10 @@ Under noisy $v$, LToT maintains higher accuracy at equal compute while reducing 
 The width-aware bar prevents over-admitting lucky spikes as the lateral pool grows, and the dual gate (consistency + re-derivation) filters non-causal coincidences.
 These results address the failure mode most salient in frontier deployments where verifiers are plausibility- or tool-aligned during exploration.
 
-\begin{table*}[t]
+\begin{table}[t]
 \centering
 \caption{\textbf{Budget sweep (GSM-Plus).} Success@1 at equal compute across three budget caps per scale. \emph{Forecasted}.}
 \vspace{0.3em}
-\resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
  & \multicolumn{2}{c}{\textbf{Low}} & \multicolumn{2}{c}{\textbf{Med}} & \multicolumn{2}{c}{\textbf{High}} \\
@@ -625,15 +620,13 @@ M (Mix) & 66 & \textbf{68} & 71 & \textbf{76} & 74 & \textbf{84} \\
 L (70B) & 78 & \textbf{80} & 83 & \textbf{87} & 86 & \textbf{92} \\
 \bottomrule
 \end{tabular}
-}
 \label{tab:budget-gsm}
-\end{table*}
+\end{table}
 
-\begin{table*}[t]
+\begin{table}[t]
 \centering
 \caption{\textbf{Budget sweep (HumanEval, pass@1).} \emph{Forecasted}.}
 \vspace{0.3em}
-\resizebox{\textwidth}{!}{%
 \begin{tabular}{lcccccc}
 \toprule
  & \multicolumn{2}{c}{\textbf{Low}} & \multicolumn{2}{c}{\textbf{Med}} & \multicolumn{2}{c}{\textbf{High}} \\
@@ -645,9 +638,8 @@ M (Mix) & 39 & \textbf{41} & 44 & \textbf{48} & 48 & \textbf{55} \\
 L (70B) & 52 & \textbf{54} & 56 & \textbf{61} & 60 & \textbf{68} \\
 \bottomrule
 \end{tabular}
-}
 \label{tab:budget-he}
-\end{table*}
+\end{table}
 
 Absolute gains increase with budget across scales (e.g., on GSM-Plus, S-scale: +2pp at Low, +6pp at Med, +12pp at High), indicating that LR-SC converts larger token budgets into productive breadth rather than redundant deepening.
 Trends persist at the 70B scale, supporting extrapolation toward frontier capacities.
@@ -656,7 +648,6 @@ Trends persist at the 70B scale, supporting extrapolation toward frontier capaci
 \centering
 \caption{Median wall-clock to first verified solution (MATH-500), when stopping at first hit. \emph{Forecasted}.}
 \vspace{0.3em}
-\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lcc}
 \toprule
  & \textbf{ToT} & \textbf{LToT (ours)} \\
@@ -666,7 +657,6 @@ M (Mix) & 30s & \textbf{22s} \\
 L (70B) & 21s & \textbf{16s} \\
 \bottomrule
 \end{tabular}
-}
 \label{tab:latency}
 \end{table}
 
@@ -684,13 +674,28 @@ We will also evaluate drop-in mitigations that preserve the pseudolinear lateral
 \label{section:conclusion}
 LToT reframes inference--time reasoning as width--first search: keep mainlines narrow while racing many logically consistent variants, promoting only what survives cheap, staged checks. Separating \emph{consistency} from \emph{utility} and allocating compute by marginal gain converts surplus compute into productive breadth, yielding higher success--per--compute and cleaner error profiles than ToT/MCTS across math, code, and ToT--style puzzles. Limitations include reliance on a minimally aligned consistency signal and sub--exponential rung noise, and latency/hardware constraints can shrink effective width. Promising directions include cascaded or learned consistency checks, training--time preference/verification supervision, and multi--actor coordination. We view LToT as a practical drop-in upgrade candidate for inference-time search and an operationalization of lateral thinking in LM reasoning.
 
+\section*{Impact Statement}
+This paper investigates inference-time search controllers for large language models,
+specifically a Lateral Tree-of-Thoughts (LToT) strategy that treats logically consistent,
+low-utility candidates as useful signals during search. Potential positive impacts
+include improved reliability of multi-step reasoning under limited compute and clearer
+diagnostics for search-time controller behavior. Potential risks include (i) enabling
+more efficient generation of persuasive but incorrect content; (ii) amplifying
+fairness and bias issues inherited from base models; and (iii) increased inference-time
+compute costs with associated environmental and accessibility concerns. We mitigate
+these risks by: evaluating on tasks with explicit correctness checks; emphasizing
+faithfulness and verifiability where applicable; and documenting default budgets and
+controller hyperparameters. This work does not introduce new
+datasets, annotation procedures, or domain-specific deployment contexts that would
+raise additional privacy or safety risks beyond those already known for LMs.
+
+\section*{Acknowledgements}
+We thank Emanuele La Malfa for valuable discussions on this project and for offering compute resources to support it.
 
 % ---- BibTeX with natbib (ICLR style) ----
 \FloatBarrier
 \bibliographystyle{icml2025}
 \bibliography{icml-submission}  % matches paper/iclr-submission.bib
-\section*{Acknowledgments}
-We thank Emanuele La Malfa for valuable discussions on this project and for offering compute resources to support it.
 
 \appendix
 
