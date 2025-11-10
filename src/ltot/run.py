@@ -363,6 +363,24 @@ def do_aggregate(args):
                     if rec.get("kind")=="earlystop_latency": early_rows.append(rec)
     writer.close()
 
+
+# --- Compute median expansions-to-first-verified (Option A metric) ---
+import statistics as _stats
+if early_rows:
+    # keep only hits; for misses, we can treat as budget-capped (exclude from median as in paper)
+    erdf = pd.DataFrame(early_rows)
+    grp = erdf.groupby(["task","model","method","budget"], dropna=False)
+    with open(args.artifact, "a", encoding="utf-8") as f:
+        for keys, g in grp:
+            # Filter to hits only; if none hit, skip to avoid degenerate medians
+            gh = g[g["hit"]==True]
+            if not gh.empty and "expansions" in gh.columns:
+                med = float(_stats.median([int(x) for x in gh["expansions"].tolist()]))
+                task, model, method, budget = keys
+                f.write(json.dumps({"kind":"metric","task":task,"model":model,"method":method,
+                                    "budget":budget,"metric":"median_expansions_to_first_verified",
+                                    "score": med}) + "\n")
+
     if args.fig:
         if run_rows:
             df = pd.DataFrame(run_rows)

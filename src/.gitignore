@@ -1,9 +1,0 @@
-# large intermediates
-results/raw*
-results/raw_width*
-results/raw_ablate*
-results/raw_latency*
-logs/*
-.cache/
-.venv/
-__pycache__/

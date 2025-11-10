@@ -30,3 +30,23 @@ python scripts/diag_local.py
 python -m ltot.run aggregate \
   --inputs results/raw --inputs_width results/raw_width --inputs_ablate results/raw_ablate --inputs_latency results/raw_latency \
   --artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg
+
+
+## Option‑A quick start (GSM‑Plus, equal‑compute)
+
+Use the provided `configs/experiments_optionA.yaml` (single 8B model, GSM‑Plus, pinned 250‑ID split) and run:
+
+```bash
+# Equal‑compute run (writes Success@1 with exact‑match)
+python -m ltot.run run --model llama-3.1-8b-instruct --task gsm_plus --budget 700 --seed 1 --out results/raw/optA.eq.jsonl
+
+# Early‑stop pass (expansions‑to‑first‑verified)
+python -m ltot.run earlystop --model llama-3.1-8b-instruct --task gsm_plus --budget 700 --seed 1 --out results/raw_latency/optA.lat.jsonl
+
+# Optional width scaling at fixed compute (N0 ∈ {64,128})
+python -m ltot.run widthscale --model llama-3.1-8b-instruct --task gsm_plus --budget 700 --seed 1 --out results/raw_width/optA.ws.jsonl
+
+# Aggregate: writes main figure + metrics, including median_expansions_to_first_verified
+python -m ltot.run aggregate --inputs results/raw --inputs_width results/raw_width --inputs_ablate results/raw_ablate \
+    --inputs_latency results/raw_latency --artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg
+```

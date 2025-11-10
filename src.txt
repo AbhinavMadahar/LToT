@@ -1,0 +1,2842 @@
+
+==> ./quickstart.md <==
+# Quickstart to Running the LToT ICLR Experiments
+
+Below is a **self‑contained, step‑by‑step guide** you can hand to your Oxford collaborator. It assumes no prior exposure to ARC specifically, but does assume comfort with Linux, Git, Python, and Slurm. It explains the **why** behind each step (so it’s not just a pile of commands), matches the **paper’s exact experimental protocol**, and shows how to monitor jobs and land a **submission‑ready artifact** even while long‑tail experiments are still running. Where I refer to the experimental design (equal‑compute, width‑scaling $N₀$, ablations, early‑stop, cost law), I’m following your manuscript.  I also reference your collaborator’s background (LLM benchmarking/HPC), so the guide uses practices they’ll already know.&#x20;
+
+---
+
+# LToT on Oxford ARC — A Complete Operator’s Guide
+
+## 1) What you’re running and why it’s organized this way
+
+**Lateral Tree‑of‑Thoughts (LToT)** is a search‑time controller that separates **mainlines** (high‑utility exploitation) from **laterals** (logically consistent, initially low‑utility candidates). It races many laterals cheaply and **promotes** a branch the moment it crosses a **width‑aware mainline bar**; promotions are bound to **verifier‑aligned outcomes** (exact match for math, tests for code). The controller’s core, **LR–SC**, achieves **pseudolinear lateral cost** $Θ(N log N)$ so you can scale lateral coverage without blowing up compute. The paper’s experiments require:
+
+* **Equal‑compute** CoT/ToT/MCTS‑PW/**LToT** at matched median tokens (±2%).
+* **Width scaling** over initial lateral width $N₀$.
+* **Ablations** (overflow\_off, no\_curvature, no\_width\_bar, no\_short\_circuit, no\_plateau, no\_confirm).
+* **Early‑stop** (time‑to‑first‑hit).
+* A compact **noisy‑v** study.
+
+All logs and tables roll up into **one artifact** (`results/ltot_artifact.jsonl`) and a **main figure** (`figures/main_equal_compute.svg`).&#x20;
+
+Why this guide emphasizes *ordering and monitoring*: finishing the **ICLR‑core** pieces first (main equal‑compute table, one width‑scaling figure, one ablation table, and early‑stop) is enough for a strong submission; heavier slices (GSM‑Plus, the 70B row, full budget sweeps, full noisy‑v) add depth if they finish in time.&#x20;
+
+---
+
+## 2) ARC in practice (what you need to know in 5 minutes)
+
+* ARC uses **Slurm**. You **never compute on login nodes**; you submit jobs and arrays with `sbatch`.
+* Use an **interactive partition** briefly to build environments or validate GPUs (`srun -p interactive --pty /bin/bash`).
+* Storage is typically split: a small **\$HOME** for dotfiles, a larger project area (e.g., **\$DATA**) for repos/datasets/results, and an ephemeral **\$SCRATCH/\$TMPDIR** inside jobs—copy results back before exit.
+* GPUs are requested with `#SBATCH --gres=gpu:<count>` (optionally constrain to a type like `a100`); choose partitions that make sense for your group’s queue.
+* Core Slurm commands you’ll use: `sbatch`, `squeue`, `sinfo`, `sacct`, `scancel`.
+  This level of workflow is standard for an LLM benchmarking/HPC operator.&#x20;
+
+---
+
+## 3) Repository orientation (what lives where)
+
+* **Top level**: `README.md`, `requirements.txt`, `Snakefile`, `configs/experiments.yaml`, `launch_arc.sh` (legacy), `ltot/` package.
+* **Controllers/algorithms**: `ltot/search/ltot_controller.py`, `ltot/search/lrsc.py`, baselines in `ltot/search/baselines.py`.
+* **Data & eval**: `ltot/datasets.py`, `ltot/evaluators.py`.
+* **Runner**: `ltot/run.py` (subcommands: `run`, `widthscale`, `ablate`, `earlystop`, `aggregate`).
+* **Outputs**: Per‑job JSONLs under `results/raw*`; merged artifact at `results/ltot_artifact.jsonl`; main figure at `figures/main_equal_compute.svg`.
+  This layout is already aligned to the paper’s experiment plan.&#x20;
+
+---
+
+## 4) One‑time setup (login or interactive node)
+
+**Why this order?** You prepare a deterministic Python env, put caches on persistent storage to avoid re‑downloading models, and **fail fast** on canonical files before any GPUs are consumed. The paper intentionally **fails closed** if canonical ID lists are missing; catching that now prevents silent cohort drift.&#x20;
+
+1. **Clone and env**
+
+```bash
+mkdir -p $DATA/ltot && cd $DATA/ltot
+git clone <YOUR_REPO_URL> repo && cd repo
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip && pip install -r requirements.txt
+```
+
+2. **Model/dataset caches on persistent storage**
+
+```bash
+export HF_HOME="${DATA:-$HOME}/.cache/huggingface"
+export TRANSFORMERS_CACHE="${HF_HOME}/transformers"
+export HF_DATASETS_CACHE="${HF_HOME}/datasets"
+mkdir -p "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE"
+```
+
+3. **Hugging Face access** (accept EULAs for Meta/Mistral once; avoids 401/403 on first load)
+
+```bash
+huggingface-cli login
+```
+
+4. **Canonical files sanity check** (fast fail if any are missing)
+
+```bash
+python - <<'PY'
+from ltot.datasets import load_task
+for t in ["gsm_hard","math_500","mbpp_lite","game24","humaneval"]:
+    try:
+        n = sum(1 for _ in load_task(t, seed=1))
+        print(f"OK {t}: {n} items")
+    except Exception as e:
+        print(f"ERROR {t}: {e}")
+PY
+```
+
+5. **Local smoke test** (validates prompts/verifiers end‑to‑end)
+
+```bash
+python -m ltot.run run \
+  --model llama-3.1-8b-instruct --task humaneval --budget 350 --seed 1 \
+  --out results/smoke.jsonl --shard 0
+tail -n +1 results/smoke.jsonl
+```
+
+---
+
+## 5) How the job orchestration works (and the small fix you need)
+
+**The idea:** your grid is split into **100 shards** (from `configs/experiments.yaml`) so the cluster can run many independent slices in parallel. The `Snakefile` reads an env var `LTOT_SHARD` to decide which slice a job owns. Each **array task** sets `LTOT_SHARD=${SLURM_ARRAY_TASK_ID}` and then runs Snakemake for *its* share. This yields high throughput while keeping per‑job memory bounded—important for large models. This change is operational only; it does **not** alter experiment semantics from the paper.&#x20;
+
+Create three tiny scripts:
+
+**A) Array worker: `scripts/arc_shard.sbatch`**
+Explains: one task = one shard; keeps intermediate JSONLs (`--notemp`) so you can aggregate anytime.
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=ltot.shard
+#SBATCH --partition=short          # adjust to your ARC tenant
+#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=48G
+#SBATCH --gres=gpu:4               # tune per node type / model mix
+#SBATCH --output=logs/arr.%x-%A_%a.out
+#SBATCH --error=logs/arr.%x-%A_%a.err
+set -euo pipefail
+source $PWD/.venv/bin/activate
+export LTOT_SHARD=${SLURM_ARRAY_TASK_ID}
+echo "[INFO] Running Snakemake for LTOT_SHARD=$LTOT_SHARD"
+snakemake --snakefile Snakefile --rerun-incomplete --cores 1 --notemp
+```
+
+**B) Optional warmup: `scripts/arc_warmup.sbatch`**
+Explains: pre‑loads 8B/Mix models into cache so the arrays don’t all pull weights at once.
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=ltot.warm
+#SBATCH --partition=short
+#SBATCH --time=00:20:00
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --output=logs/warm.%x-%A.out
+set -euo pipefail
+source $PWD/.venv/bin/activate
+python - <<'PY'
+from ltot.inference.backends import LocalLM, hf_model_id
+for m in ["llama-3.1-8b-instruct","mixtral-8x7b-instruct"]:
+    print("WARMUP:", m); LocalLM(hf_model_id(m))
+print("Done.")
+PY
+```
+
+**C) Aggregation: `scripts/arc_aggregate.sbatch`**
+Explains: collates any finished shards into the single artifact and main SVG; safe to re‑run.
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=ltot.aggr
+#SBATCH --partition=short
+#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --output=logs/aggr.%x-%A.out
+set -euo pipefail
+source $PWD/.venv/bin/activate
+python -m ltot.run aggregate \
+  --inputs         results/raw \
+  --inputs_width   results/raw_width \
+  --inputs_ablate  results/raw_ablate \
+  --inputs_latency results/raw_latency \
+  --artifact       results/ltot_artifact.jsonl \
+  --fig            figures/main_equal_compute.svg
+echo "[INFO] Wrote results/ltot_artifact.jsonl and figures/main_equal_compute.svg"
+```
+
+---
+
+## 6) Submitting the paper‑exact suite (and how to prioritize what matters)
+
+**Default (everything at once):**
+
+```bash
+sbatch scripts/arc_warmup.sbatch
+jid=$(sbatch --array=0-99 scripts/arc_shard.sbatch | awk '{print $4}')
+sbatch --dependency=afterok:$jid scripts/arc_aggregate.sbatch
+```
+
+**Or, stage the “ICLR‑core” first** so the most important tables/figures are guaranteed to land: set these env filters to *restrict* the grid (you can unset them later for the long tail):
+
+* Tasks: `gsm_hard, math_500, humaneval, mbpp_lite, game24`
+* Models: `llama-3.1-8b-instruct, mixtral-8x7b-instruct`
+* Seeds: `1,2,3`
+* Budgets: **Med** tier for each scale (as in the paper)
+
+> Add this tiny snippet once near the top of your `Snakefile` (right after it loads `config`) so the filters work:
+
+```python
+import os
+task_filter = os.environ.get("LTOT_TASKS","").strip()
+if task_filter:
+    want = {t.strip() for t in task_filter.split(",") if t.strip()}
+    tasks = [t for t in tasks if t in want]
+model_filter = os.environ.get("LTOT_MODELS","").strip()
+if model_filter:
+    wantm = {m.strip() for m in model_filter.split(",") if m.strip()}
+    models = [m for m in models if m in wantm]
+seed_filter = os.environ.get("LTOT_SEEDS","").strip()
+if seed_filter:
+    seeds = [int(s) for s in seed_filter.split(",") if s.strip()]
+budget_ovr = os.environ.get("LTOT_BUDGETS","").strip()
+if budget_ovr:
+    ov = {}
+    for part in budget_ovr.split(";"):
+        if not part: continue
+        k,v = part.split("="); ov[k.strip()] = [int(x) if x.isdigit() else x for x in v.split(",")]
+    for m in list(budgets.keys()):
+        if "all" in ov: budgets[m] = ov["all"]
+        if m in ov: budgets[m] = ov[m]
+```
+
+Then:
+
+```bash
+export LTOT_TASKS="gsm_hard,math_500,humaneval,mbpp_lite,game24"
+export LTOT_MODELS="llama-3.1-8b-instruct,mixtral-8x7b-instruct"
+export LTOT_SEEDS="1,2,3"
+export LTOT_BUDGETS="llama-3.1-8b-instruct=700;mixtral-8x7b-instruct=1000;llama-3.1-70b-instruct=1400"
+jid=$(sbatch --array=0-99 scripts/arc_shard.sbatch | awk '{print $4}')
+sbatch --dependency=afterok:$jid scripts/arc_aggregate.sbatch
+```
+
+**Why this staging helps:** it prioritizes the **main equal‑compute table** and the core **width‑scaling/ablation/early‑stop** results the paper needs, while **GSM‑Plus**, **70B**, and full **budget sweeps**—valuable but not strictly required—can run as time allows.&#x20;
+
+---
+
+## 7) Monitoring and mid‑run validation (so nothing goes “silently wrong”)
+
+**Queues and logs**
+
+```bash
+squeue -u $USER
+tail -f logs/arr.ltot.shard-*.out
+```
+
+**Aggregate anytime** (safe to re‑run repeatedly while shards finish)
+
+```bash
+python -m ltot.run aggregate \
+  --inputs results/raw --inputs_width results/raw_width \
+  --inputs_ablate results/raw_ablate --inputs_latency results/raw_latency \
+  --artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg
+```
+
+**Equal‑compute parity sentinel (±2% as in the paper)**
+If this exits non‑zero, at least one method drifted; re‑run that slice before writing the table.&#x20;
+
+```bash
+jq -r 'select(.kind=="fairness") | [.task,.model,.method,(.error_pp|tonumber)]|@tsv' \
+  results/ltot_artifact.jsonl | awk '($4<-2 || $4>2){bad=1} END{exit bad}'
+```
+
+**Coverage sentinel** (are the core slices present yet?)
+
+```bash
+python - <<'PY'
+import glob, re
+need=[("gsm_hard","llama-3.1-8b-instruct"),("math_500","llama-3.1-8b-instruct"),
+      ("humaneval","llama-3.1-8b-instruct"),("mbpp_lite","llama-3.1-8b-instruct"),
+      ("gsm_hard","mixtral-8x7b-instruct"),("math_500","mixtral-8x7b-instruct")]
+have=set()
+for p in glob.glob("results/raw/*.jsonl"):
+    m=re.search(r"results/raw/([^\.]+)\.([^\.]+)\.", p)
+    if m: have.add((m.group(2), m.group(1)))
+missing=[x for x in need if x not in have]
+print("MISSING:", missing); exit(1 if missing else 0)
+PY
+```
+
+**Why these checks:** the paper’s fairness rule and dataset discipline mean most manuscript‑impacting issues are **visible early**; these sentinels keep the chance of a “silent” unusable slice very low.&#x20;
+
+---
+
+## 8) Reading the outputs (so you know when you’re submission‑ready)
+
+* **Per‑job JSONLs** land in:
+
+  * `results/raw/…` (main runs), `results/raw_width/…`, `results/raw_ablate/…`, `results/raw_latency/…`
+* **The artifact** `results/ltot_artifact.jsonl` contains:
+
+  * `run` records for each (task, model, method, budget, seed).
+  * `metric` records (Success\@1/Pass\@1 with CI, fairness parity, cost‑law fit, etc.).
+  * `promotion_event` diagnostics, `rung_costs`, and early‑stop latency (if enabled).
+* **The figure** `figures/main_equal_compute.svg` summarizes the main equal‑compute table.
+
+These match the tables/plots described in the manuscript (equal‑compute table, width‑scaling curves, ablations, early‑stop).&#x20;
+
+---
+
+## 9) Troubleshooting (fast triage that covers 90% of issues)
+
+* **Hugging Face 401/403** at model load → log in; ensure EULAs accepted.
+* **Canonical file missing** → place it at the path from `configs/experiments.yaml` (the repo is fail‑closed by design).&#x20;
+* **OOM on 70B** → schedule those jobs on fast, high‑memory GPUs and keep `--gres=gpu:4` (the 70B row is optional for the first submission).&#x20;
+* **Disk/quota** → set caches to `$DATA` (see §4), keep `--notemp`, aggregate often, clean as needed.
+* **Fairness guard trips** → re‑run that method/task at the calibrated knob; the ±2% rule is part of the paper’s parity spec.&#x20;
+
+---
+
+## 10) Committing results to Git (what to include and why)
+
+**Commit these (small, reviewable):**
+
+* `results/ltot_artifact.jsonl` (single source for all tables/metrics/diagnostics).
+* `figures/main_equal_compute.svg` (main figure).
+* `results/run_metadata.json` (provenance: commit hash, Python/pkg versions).
+
+**Do not commit** shard raws/logs. Add to `.gitignore`:
+
+```gitignore
+results/raw*
+results/raw_width*
+results/raw_ablate*
+results/raw_latency*
+logs/*
+```
+
+**Provenance stamp**
+
+```bash
+python - <<'PY'
+import json, subprocess, platform, time
+sh=lambda x: subprocess.check_output(x, shell=True, text=True).strip()
+meta={"timestamp":time.strftime("%Y-%m-%d %H:%M:%S"),
+      "git_commit":sh("git rev-parse --short HEAD"),
+      "python":platform.python_version(),
+      "pip_freeze":sh("python -m pip freeze"),
+      "torch":__import__("torch").__version__,
+      "transformers":__import__("transformers").__version__}
+json.dump(meta, open("results/run_metadata.json","w"), indent=2)
+print("Wrote results/run_metadata.json")
+PY
+
+git add figures/main_equal_compute.svg results/ltot_artifact.jsonl results/run_metadata.json .gitignore
+git commit -m "ICLR artifact & main figure (+ provenance)"
+git push
+```
+
+**Why this subset:** it’s everything a reviewer needs to reproduce the reported tables/figure without flooding the repo with large, noisy intermediates. The artifact can always be re‑created from raws if you keep those elsewhere.
+
+---
+
+## 11) When time is tight (the “ICLR‑core” cut)
+
+If wall‑time is at risk, ensure the artifact contains:
+
+* **Main equal‑compute table** across math, code, and ToT‑style puzzles.
+* **One width‑scaling** sweep (e.g., on MATH‑500).
+* **One ablation table** (e.g., on MATH‑500).
+* **Early‑stop** latency (e.g., MATH‑500 and/or HumanEval).
+
+These four deliver the paper’s main claims; GSM‑Plus, full budget sweeps, 70B, and full noisy‑v can land later without undermining the submission.&#x20;
+
+---
+
+### Final notes tailored to your collaborator
+
+* The controller’s *operational logic* (LR–SC, width‑aware bar with confirm, verifier‑bound promotion, plateau trigger) is **already encoded** in the repo; the orchestration above simply gives ARC the right shape of work.&#x20;
+* Given his LLM benchmarking/CUDA/HPC background, watching `squeue`, tailing array logs, and re‑aggregating periodically will feel familiar—and is enough to keep the risk of “silent” manuscript issues minimal.&#x20;
+
+If you’d like, I can package the three `scripts/*.sbatch` files plus the `Snakefile` env‑filter snippet as a single patch you can `git apply`—but the guide above is fully runnable as‑is.
+
+==> ./configs/experiments.yaml <==
+cluster:
+  num_shards: 100
+  gpus_per_job: 4
+
+models: [llama-3.1-8b-instruct, mixtral-8x7b-instruct, llama-3.1-70b-instruct]
+
+budgets:
+  llama-3.1-8b-instruct:  [350, 700, 1400]
+  mixtral-8x7b-instruct:  [500, 1000, 2000]
+  llama-3.1-70b-instruct: [700, 1400, 2800]
+
+tasks: [gsm_plus, gsm_hard, math_500, humaneval, mbpp_lite, game24]
+seeds: [1, 2, 3]
+
+controllers:
+  ltot:
+    eta: 4
+    b0: 1
+    micro_probe: 1
+    overflow_cap: 0.15
+    kappa: 1.0
+    delta: 0.02
+    horizons: [1,2,4,8,16,32]
+    order_set: [1, 2]
+    mainline_topk: 1
+    mainline_width: 2
+    initial_lateral_width: 128
+    confirmation_temp: [0.7, 0.95]
+    micro_beam: 3
+    beta_alpha: 0.5
+
+plateau:
+  ewma_beta: 0.3
+  tau: 1.0e-4
+  hysteresis: 5.0e-5
+  patience_steps: 3
+  depth_banding: true
+  band_width: 2
+  min_compute_delta: 8
+
+bars:
+  tail_model: subgaussian   # subgaussian | subgamma | subweibull
+  subgamma: {nu: 1.0, c: 1.0}
+  subweibull: {K: 1.0, alpha: 1.5}
+  use_effective_width: true
+  winsorize_z: 3.5
+
+envelope:
+  agg: topk                 # topk | trimmed | power | weighted
+  power_p: 1.5
+  trim_frac: 0.15
+  omega_max: 0.7
+
+consistency:
+  lambdas: {logic: 0.7, syntax: 0.2, constraints: 0.1}
+  qa_dual_gate:
+    enabled: false
+    tau_v: 0.85
+    tau_c: 0.75
+    q: 0.25
+    tighten_if_lmonly: 0.10
+  admission_gate:
+    enabled: true
+    tau_c: 0.75
+    tighten_if_lmonly: 0.10
+    temperature: 0.0   # c_local scoring temp at admission
+
+equal_compute:
+  calibrate: true
+  tolerance_pp: 2.0
+  sample_per_task: 24
+  max_iters: 4
+
+width_scaling:
+  enabled: true
+  N0_values: [32, 64, 128, 256, 512, 1024]
+
+ablations:
+  - overflow_off
+  - no_curvature
+  - no_width_bar
+  - no_short_circuit
+  - no_plateau
+  - no_confirm
+
+noisy_v_study:
+  enabled: true              # when true, exploration uses LM-scored v_LM
+  tasks: [gsm_plus, math_500]
+  temp_low: 0.0              # rung-wise temperature randomization (inclusive)
+  temp_high: 0.8
+
+robustness_study:
+  enabled: false
+  tail: laplace
+  scale: 0.15
+  corr_rho: 0.20
+
+early_stop:
+  enabled: true
+
+diagnostics:
+  enable: true
+  sh_only_lateralization: true
+  sh_on_mainlines: true
+
+datasets:
+  canonical_lists:
+    gsm_hard_ids: data/canonical/gsm_hard_ids.txt
+    math500_ids:  data/canonical/math500_ids.txt
+    mbpp_ids:     data/canonical/mbpp_lite_ids.txt
+    game24:       data/canonical/game24_quads.txt
+  allow_fallback_heuristics: false
+
+==> ./secrets.env.example <==
+# Optional: only if you route evals or external verifiers through APIs.
+# By default, everything runs fully local with HF models.
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+
+==> ./Snakefile <==
+import os, yaml
+from pathlib import Path
+
+configfile: "configs/experiments.yaml"
+
+# Parallelization via shards (set by Slurm array worker)
+shard = int(os.environ.get("LTOT_SHARD", "0"))
+N_SHARDS = int(config["cluster"]["num_shards"])
+
+def shard_filter(items):
+    return [it for i, it in enumerate(items) if i % N_SHARDS == shard]
+
+# Base grid from config
+models = config["models"]
+tasks = config["tasks"]
+budgets = config["budgets"]
+seeds = config["seeds"]
+
+# Optional environment filters (for staged runs)
+task_filter = os.environ.get("LTOT_TASKS","").strip()
+if task_filter:
+    want = {t.strip() for t in task_filter.split(",") if t.strip()}
+    tasks = [t for t in tasks if t in want]
+
+model_filter = os.environ.get("LTOT_MODELS","").strip()
+if model_filter:
+    wantm = {m.strip() for m in model_filter.split(",") if m.strip()}
+    models = [m for m in models if m in wantm]
+
+seed_filter = os.environ.get("LTOT_SEEDS","").strip()
+if seed_filter:
+    seeds = [int(s) for s in seed_filter.split(",") if s.strip()]
+
+# Build shard-local worklist
+work = shard_filter([(m,t,b,s) for m in models for t in tasks for b in budgets[m] for s in seeds])
+
+rule all:
+    input:
+        "results/ltot_artifact.jsonl",
+        "figures/main_equal_compute.svg"
+
+rule run_unit:
+    output:
+        temp("results/raw/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run run --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule run_width_scaling:
+    output:
+        temp("results/raw_width/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run widthscale --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule run_ablations:
+    output:
+        temp("results/raw_ablate/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run ablate --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule run_earlystop:
+    output:
+        temp("results/raw_latency/{model}.{task}.{budget}.{seed}.jsonl")
+    shell:
+        "python -m ltot.run earlystop --model {wildcards.model} --task {wildcards.task} "
+        "--budget {wildcards.budget} --seed {wildcards.seed} --out {output} --shard {shard}"
+
+rule aggregate:
+    input:
+        raw     = [f"results/raw/{m}.{t}.{b}.{s}.jsonl"         for (m,t,b,s) in work],
+        raw_w   = [f"results/raw_width/{m}.{t}.{b}.{s}.jsonl"   for (m,t,b,s) in work],
+        raw_a   = [f"results/raw_ablate/{m}.{t}.{b}.{s}.jsonl"  for (m,t,b,s) in work],
+        raw_lat = [f"results/raw_latency/{m}.{t}.{b}.{s}.jsonl" for (m,t,b,s) in work]
+    output:
+        "results/ltot_artifact.jsonl",
+        "figures/main_equal_compute.svg"
+    shell:
+        "python -m ltot.run aggregate "
+        "--inputs results/raw --inputs_width results/raw_width --inputs_ablate results/raw_ablate "
+        "--inputs_latency results/raw_latency "
+        "--artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg"
+
+==> ./ltot/util/artifact_jsonl.py <==
+import json, os
+
+class ArtifactWriter:
+    def __init__(self, path: str):
+        self.path = path
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self.f = open(path, "w", encoding="utf-8")
+
+    def write(self, rec):
+        self.f.write(json.dumps(rec, ensure_ascii=False) + "\n"); self.f.flush()
+
+    def close(self):
+        self.f.close()
+
+==> ./ltot/evaluators.py <==
+import ast, math, re, subprocess, sys, tempfile, textwrap
+
+def exact_match(pred: str, gold: str) -> bool:
+    def lastnum(s):
+        toks = re.findall(r"-?\d+(?:\.\d+)?", s.replace(",",""))
+        return toks[-1] if toks else s.strip()
+    return lastnum(pred) == lastnum(gold)
+
+def run_python_tests(code: str, tests_src: str) -> bool:
+    src = code + "\n" + tests_src + "\n"
+    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+        f.write(src); path=f.name
+    try:
+        out = subprocess.run([sys.executable, path], capture_output=True, timeout=5)
+        return out.returncode == 0
+    except Exception:
+        return False
+
+def eval_game24(expr: str) -> bool:
+    try:
+        val = eval(expr, {"__builtins__":{}}, {})
+        return abs(val - 24) < 1e-6
+    except Exception:
+        return False
+
+def subset_unit_tests(tests_src: str, k: int = 3) -> str:
+    """
+    Heuristically pick up to k test assertions while keeping definitions/imports.
+    Falls back to the full test file when structure is not obvious.
+    """
+    lines = tests_src.splitlines()
+    asserts = [ln for ln in lines if "assert" in ln]
+    if not asserts:
+        return tests_src
+    header = [ln for ln in lines if "assert" not in ln]
+    return "\n".join(header + asserts[:k]) + "\n"
+
+==> ./ltot/run_support.py <==
+def dry_run_tokens(llm, method, task, item, knob_val, target_budget):
+    from .search.baselines import tot_baseline, mcts_pw_baseline
+    from .search.ltot_controller import LToTController
+    from .config import LToTParams
+    from .evaluators import exact_match, run_python_tests
+    from .run import build_prompt, verifier_for, scorer_for_exploration
+    import yaml, random
+
+    q = item.get("question") or item.get("prompt") or str(item.get("digits"))
+    V = verifier_for(task, item)
+
+    if method=="ToT":
+        _, tokens, _ = tot_baseline(llm, task, q, budget_tokens=target_budget, beam=knob_val, return_tokens=True)
+        return tokens
+    if method=="MCTS-PW":
+        _, tokens, _ = mcts_pw_baseline(llm, task, q, budget_tokens=target_budget, rollouts=knob_val, return_tokens=True)
+        return tokens
+    if method=="LToT":
+        params = LToTParams()
+        import yaml
+        with open("configs/experiments.yaml","r") as yf:
+            ycfg = yaml.safe_load(yf)
+        bars_cfg = {**ycfg.get("bars", {}), "kappa": ycfg["controllers"]["ltot"]["kappa"], "delta": ycfg["controllers"]["ltot"]["delta"]}
+        plateau_cfg = ycfg.get("plateau", {})
+        lambdas = ycfg.get("consistency",{}).get("lambdas",{"logic":0.7,"syntax":0.2,"constraints":0.1})
+        mainline_cfg = dict(ycfg["controllers"]["ltot"]); mainline_cfg["initial_lateral_width"]=int(knob_val)
+        ctrl = LToTController(llm, params, V, plateau_cfg=plateau_cfg, bars_cfg=bars_cfg, lambdas=lambdas, mainline_cfg=mainline_cfg, early_stop=False)
+        noisy = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
+        score_expl = scorer_for_exploration(task, noisy, item)
+        _, tokens, _ = ctrl.run(build_prompt(task,item), q, target_budget, task, scorer=score_expl, rng=random.Random(0))
+        return tokens
+    if method=="CoT":
+        texts, toks = llm.generate([build_prompt(task,item)(q)], max_tokens=int(knob_val))
+        return int(toks[0])
+    return target_budget
+
+==> ./ltot/inference/backends.py <==
+import os, requests
+from typing import List, Tuple
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+_MODEL_CACHE = {}
+
+class OpenAICompatLM:
+    def __init__(self, model_id: str, base: str, api_key: str | None = None):
+        self.model_id = model_id
+        self.base = base.rstrip("/")
+        self.headers = {"Authorization": f"Bearer {api_key or 'dummy'}"}
+
+    def generate(self, prompts: List[str], max_tokens=128, temperature=0.7, top_p=0.95) -> Tuple[List[str], List[int]]:
+        outs, toks = [], []
+        for p in prompts:
+            payload = {
+                "model": self.model_id,
+                "prompt": p,
+                "max_tokens": int(max_tokens),
+                "temperature": float(temperature),
+                "top_p": float(top_p),
+            }
+            r = requests.post(f"{self.base}/v1/completions", json=payload, headers=self.headers, timeout=600)
+            j = r.json()
+            outs.append((j["choices"][0].get("text") or "").strip())
+            toks.append(int(j.get("usage", {}).get("completion_tokens", 0)))
+        return outs, toks
+
+def make_llm(model_name: str, **local_kwargs):
+    """
+    Choose backend by env:
+      LTOT_BACKEND=local (default)  -> LocalLM(hf_model_id(...))
+      LTOT_BACKEND=openai           -> OpenAICompatLM at OPENAI_API_BASE
+    """
+    backend = os.getenv("LTOT_BACKEND", "local").lower()
+    if backend == "openai":
+        base = os.environ["OPENAI_API_BASE"]       # e.g., http://<ip>:8000
+        key  = os.getenv("OPENAI_API_KEY")         # vLLM usually ignores it; pass dummy if unset
+        return OpenAICompatLM(hf_model_id(model_name), base, api_key=key)
+    else:
+        # Pass through dtype/kwargs so you can run 70B across 4 GPUs with device_map="auto"
+        return LocalLM(hf_model_id(model_name), **local_kwargs)
+
+def hf_model_id(name: str) -> str:
+    # Direct mapping; adjust to your local IDs if needed
+    return {
+        "llama-3.1-8b-instruct": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "mixtral-8x7b-instruct": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+        "llama-3.1-70b-instruct": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    }.get(name, name)
+
+class LocalLM:
+    def __init__(self, model_id: str, dtype: str = "bfloat16", device: str = None):
+        self.model_id = model_id
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=True)
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_id,
+            torch_dtype=getattr(torch, dtype) if hasattr(torch, dtype) else torch.float16,
+            device_map="auto"
+        )
+
+    def _toklen(self, s: str) -> int:
+        return len(self.tokenizer.encode(s, add_special_tokens=False))
+
+    def generate(
+        self,
+        prompts: List[str],
+        max_tokens: int = 128,
+        temperature: float = 0.7,
+        top_p: float = 0.95,
+    ) -> Tuple[List[str], List[int]]:
+        outputs, toks = [], []
+        for p in prompts:
+            ipt = self.tokenizer(p, return_tensors="pt").to(self.model.device)
+            out = self.model.generate(
+                **ipt,
+                do_sample=True,
+                temperature=temperature,
+                top_p=top_p,
+                max_new_tokens=max_tokens,
+                pad_token_id=self.tokenizer.eos_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
+            )
+            text = self.tokenizer.decode(out[0], skip_special_tokens=True)
+            tail = text[len(self.tokenizer.decode(ipt["input_ids"][0], skip_special_tokens=True)):]
+            outputs.append(tail.strip())
+            toks.append(self._toklen(tail))
+            prompt_tok = int(ipt["input_ids"].shape[1])
+            toks.append(prompt_tok + self._toklen(tail))
+        return outputs, toks
+
+==> ./ltot/config.py <==
+from dataclasses import dataclass
+
+@dataclass
+class LToTParams:
+    pass
+
+==> ./ltot/run.py <==
+import argparse, os, json, random, glob, math, time
+from pathlib import Path
+import pandas as pd, yaml, numpy as np
+from .inference.backends import make_llm
+from .datasets import load_task
+from .evaluators import exact_match, run_python_tests, eval_game24, subset_unit_tests
+from .search.baselines import tot_baseline, mcts_pw_baseline
+from .search.ltot_controller import LToTController
+from .config import LToTParams
+from .util.artifact_jsonl import ArtifactWriter
+from .plotting.figures import main_equal_compute_figure
+from .scorers.vlm import vlm_score
+from .calibrate import calibrate as calibrate_equal
+from statistics import median
+
+def build_prompt(task, item):
+    if task in ("gsm_plus","gsm_hard","math_500"):
+        return lambda q: f"Think step by step and compute the final answer.\nQuestion: {q}\nAnswer:"
+    elif task=="game24":
+        return lambda q: f"Use (+,-,*,/) and parentheses to make 24 from digits {q}. Show steps, then final expression.\nAnswer:"
+    elif task in ("humaneval","mbpp_lite"):
+        return lambda q: f"{q}\n# Write the function implementation below.\n"
+    else:
+        return lambda q: f"{q}\nAnswer:"
+
+def verifier_for(task, item):
+    if task in ("gsm_plus","gsm_hard","math_500"):
+        gold = item["answer"]
+        return lambda text: 1.0 if exact_match(text.splitlines()[-1].strip(), gold) else 0.0
+    elif task=="game24":
+        def V(text):
+            final = (text or "").strip().splitlines()[-1]
+            return 1.0 if eval_game24(final) else 0.0
+        return V
+    elif task=="humaneval":
+        return lambda text: 1.0 if run_python_tests(text, item["tests"]) else 0.0
+    elif task=="mbpp_lite":
+        tests_code = "".join((t + "\n") for t in (item.get("tests", [])))
+        return lambda text: 1.0 if run_python_tests(text, tests_code) else 0.0
+    return lambda text: 0.0
+
+def scorer_for_exploration(task, noisy_cfg, item=None):
+    if task == "humaneval":
+        tests_src = item["tests"]
+        def score(model, task, text):
+            ok = run_python_tests(text, subset_unit_tests(tests_src, k=3))
+            return (1.0 if ok else 0.0, 0)
+        return score
+    if task == "mbpp_lite":
+        tests_src = "".join((t + "\n") for t in (item.get("tests", [])))
+        def score(model, task, text):
+            ok = run_python_tests(text, subset_unit_tests(tests_src, k=3))
+            return (1.0 if ok else 0.0, 0)
+        return score
+    else:
+        qtxt = (item.get("question") or item.get("prompt") or str(item.get("digits") or ""))
+        if noisy_cfg.get("enabled", False):
+            def score(model, task, text):
+                return vlm_score(model, qtxt, text, (noisy_cfg.get("temp_low",0.0), noisy_cfg.get("temp_high",0.0)))
+            return score
+        else:
+            # Zero-cost, deterministic proxy when noisy-v is disabled (keeps compute parity unchanged)
+            def score(model, task, text):
+                base = 0.5 + 0.5 * (len(str(text).strip()) > 0)
+                return (max(0.0, min(1.0, base - 0.05)), 0)
+            return score
+
+
+def _load_cfg():
+    with open("configs/experiments.yaml","r") as yf:
+        return yaml.safe_load(yf)
+
+def _mk_writer(path):
+    return ArtifactWriter(path)
+
+def _knobs(calib, task, method, default):
+    return calib.get(task, {}).get(method, default)
+
+def _main_grid(args, ycfg, llm, aw):
+    plateau_cfg = ycfg.get("plateau", {})
+    bars_cfg    = {**ycfg.get("bars", {}), "kappa":ycfg["controllers"]["ltot"]["kappa"], "delta":ycfg["controllers"]["ltot"]["delta"]}
+    lambdas     = ycfg.get("consistency",{}).get("lambdas", {"logic":0.7,"syntax":0.2,"constraints":0.1})
+    mainline_cfg= {k: ycfg["controllers"]["ltot"][k] for k in ("mainline_topk","mainline_width","delta","initial_lateral_width","eta","b0","micro_probe","overflow_cap","confirmation_temp","micro_beam","beta_alpha","order_set") if k in ycfg["controllers"]["ltot"]}
+    noisy_cfg   = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
+    robust_cfg  = ycfg.get("robustness_study", {"enabled":False})
+    parity      = ycfg.get("equal_compute", {})
+    diag_cfg    = ycfg.get("diagnostics", {"enable":False})
+
+    mainline_cfg["envelope_cfg"] = ycfg.get("envelope", None)
+    mainline_cfg["dual_gate_cfg"] = ycfg.get("consistency",{}).get("qa_dual_gate", {"enabled": False})
+    mainline_cfg["admission_gate_cfg"] = ycfg.get("consistency",{}).get("admission_gate", {"enabled": False})
+
+    calib = {}
+    if os.path.exists("results/calibration.json"):
+        with open("results/calibration.json","r") as f:
+            calib = json.load(f).get("knobs", {})
+
+    rows = []
+
+    for item in load_task(args.task, args.seed):
+        q = item.get("question") or item.get("prompt") or str(item.get("digits"))
+        V = verifier_for(args.task, item)
+        for M in ["CoT","ToT","MCTS-PW","LToT"]:
+            wall_start = time.monotonic()
+            if M=="CoT":
+                max_new = int(_knobs(calib,args.task,"CoT", args.budget))
+                texts, toks = llm.generate([build_prompt(args.task,item)(q)], max_tokens=max(8, max_new))
+                out = texts[0]; tokens = int(toks[0]); expansions = 1
+            elif M=="ToT":
+                beam = _knobs(calib,args.task,"ToT",5)
+                score_expl = scorer_for_exploration(args.task, noisy_cfg if noisy_cfg.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+                out, tokens, expansions = tot_baseline(llm, args.task, q, budget_tokens=args.budget, beam=beam,
+                                           exploration_scorer=score_expl, return_tokens=True,
+                                           verifier=verifier_for(args.task, item), early_stop=False)
+            elif M=="MCTS-PW":
+                rolls = _knobs(calib,args.task,"MCTS-PW",64)
+                score_expl = scorer_for_exploration(args.task, noisy_cfg if noisy_cfg.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+                out, tokens, expansions = mcts_pw_baseline(llm, args.task, q, budget_tokens=args.budget, rollouts=rolls,
+                                               exploration_scorer=score_expl, return_tokens=True,
+                                               verifier=verifier_for(args.task, item), early_stop=False)
+            else:
+                ml_cfg = dict(mainline_cfg)
+                n0 = _knobs(calib,args.task,"LToT", ml_cfg.get("initial_lateral_width",128))
+                ml_cfg["initial_lateral_width"] = int(n0)
+                ml_cfg["envelope_cfg"] = ycfg.get("envelope", None)
+                ml_cfg["noise_cfg"] = robust_cfg if robust_cfg.get("enabled", False) else {"enabled": False}
+                ctrl = LToTController(llm, LToTParams(), V, plateau_cfg=ycfg.get("plateau",{}),
+                                      bars_cfg=bars_cfg, lambdas=lambdas, mainline_cfg=ml_cfg,
+                                      early_stop=False)
+                score_expl = scorer_for_exploration(args.task, noisy_cfg if noisy_cfg.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+                def _log_cb(rec):
+                    payload = {**rec}
+                    payload.update({"task":args.task,"qid":item["qid"],"model":args.model,"method":"LToT",
+                                    "budget":args.budget,"seed":args.seed})
+                    aw.write(payload)
+                text, tokens, rung_costs_all, _, expansions = ctrl.run(build_prompt(args.task,item), q, args.budget, args.task,
+                                                                       scorer=score_expl, rng=random.Random(args.seed),
+                                                                       return_logs=True, log_callback=_log_cb)
+                out = text
+                aw.write({"kind":"rung_costs","task":args.task,"qid":item["qid"],"model":args.model,
+                          "method":"LToT","budget":args.budget,"seed":args.seed,"rung_costs": [int(x) for x in rung_costs_all]})
+            v  = V(out)
+            wall = time.monotonic() - wall_start
+            rec = {"kind":"run","task":args.task,"qid":item["qid"],"model":args.model,
+                   "method":M,"budget":args.budget,"seed":args.seed,"pred":out,"score":float(v),
+                   "tokens": int(tokens), "expansions": int(expansions), "wall_s": float(wall)}
+            if M=="LToT":
+                rec["N0"] = int(n0)
+            aw.write(rec); rows.append(rec)
+
+            if M in ("ToT","MCTS-PW") and noisy_cfg.get("enabled", False) and (args.task in set(noisy_cfg.get("tasks", []))):
+                from .scorers.vlm import vlm_score
+                tau_v = float(ycfg.get("consistency",{}).get("qa_dual_gate",{}).get("tau_v", 0.85))
+                s_vlm, s_cost = vlm_score(llm, "question", out, (noisy_cfg["temp_low"], noisy_cfg["temp_high"]))
+                aw.write({"kind":"promotion_event","task":args.task,"qid":item["qid"],"model":args.model,"method":M,
+                          "budget":args.budget,"seed":args.seed,"origin":"baseline_final",
+                          "z": 0.0, "bar": tau_v, "proposed": bool(s_vlm >= tau_v), "accepted": bool(v >= 1.0), "rung": -1})
+
+        if diag_cfg.get("enable", False):
+            score_expl = scorer_for_exploration(args.task, noisy_cfg if noisy_cfg.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+            from .search.diagnostics import sh_only_lateralization, sh_on_mainlines
+            out, tokens, expansions = sh_only_lateralization(llm, args.task, q, args.budget, score_expl,
+                                                             initial_width=int(mainline_cfg.get("initial_lateral_width",128)),
+                                                             eta=int(mainline_cfg.get("eta",4)), b0=int(mainline_cfg.get("b0",1)),
+                                                             micro_beam=int(mainline_cfg.get("micro_beam",3)))
+            v = V(out)
+            r = {"kind":"run","task":args.task,"qid":item["qid"],"model":args.model,"method":"SH-LAT",
+                 "budget":args.budget,"seed":args.seed,"pred":out,"score":float(v),
+                 "tokens":int(tokens), "expansions":int(expansions), "wall_s":0.0}
+            aw.write(r); rows.append(r)
+            out, tokens, expansions = sh_on_mainlines(llm, args.task, q, args.budget, score_expl,
+                                                      beam=int(mainline_cfg.get("mainline_width",2))*2,
+                                                      eta=int(mainline_cfg.get("eta",4)), b0=int(mainline_cfg.get("b0",1)))
+            v = V(out)
+            r = {"kind":"run","task":args.task,"qid":item["qid"],"model":args.model,"method":"SH-MAIN",
+                 "budget":args.budget,"seed":args.seed,"pred":out,"score":float(v),
+                 "tokens":int(tokens), "expansions":int(expansions), "wall_s":0.0}
+            aw.write(r); rows.append(r)
+    return pd.DataFrame(rows)
+
+def _width_scaling(args, ycfg, llm, aw):
+    plate = ycfg.get("plateau", {})
+    bars  = {**ycfg.get("bars", {}), "kappa":ycfg["controllers"]["ltot"]["kappa"], "delta":ycfg["controllers"]["ltot"]["delta"]}
+    lamb  = ycfg.get("consistency",{}).get("lambdas", {"logic":0.7,"syntax":0.2,"constraints":0.1})
+    mlcfg = {k: ycfg["controllers"]["ltot"][k] for k in ("mainline_topk","mainline_width","delta","initial_lateral_width","eta","b0","micro_probe","overflow_cap","confirmation_temp","micro_beam","beta_alpha","order_set") if k in ycfg["controllers"]["ltot"]}
+    noisy = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
+    N0vals= ycfg.get("width_scaling",{}).get("N0_values",[32,64,128,256,512,1024])
+    rows = []
+    for item in load_task(args.task, args.seed):
+        q = item.get("question") or item.get("prompt") or str(item.get("digits"))
+        V = verifier_for(args.task, item)
+        for N0 in N0vals:
+            ml = dict(mlcfg); ml["initial_lateral_width"]=int(N0)
+            ml["admission_gate_cfg"] = ycfg.get("consistency",{}).get("admission_gate", {"enabled": False})
+            ctrl = LToTController(llm, LToTParams(), V, plateau_cfg=plate, bars_cfg=bars, lambdas=lamb, mainline_cfg=ml, early_stop=False)
+            score_expl = scorer_for_exploration(args.task, noisy if noisy.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+            out, tokens, expansions = ctrl.run(build_prompt(args.task,item), q, args.budget, args.task, scorer=score_expl, rng=random.Random(args.seed))
+            v = V(out)
+            rec = {"kind":"width_scaling_run","task":args.task,"qid":item["qid"],"model":args.model,
+                   "N0":int(N0),"budget":args.budget,"seed":args.seed,"score":float(v),"tokens":int(tokens),"expansions":int(expansions)}
+            aw.write(rec); rows.append(rec)
+    return pd.DataFrame(rows)
+
+def _ablations(args, ycfg, llm, aw):
+    plate = ycfg.get("plateau", {})
+    bars  = {**ycfg.get("bars", {}), "kappa":ycfg["controllers"]["ltot"]["kappa"], "delta":ycfg["controllers"]["ltot"]["delta"]}
+    lamb  = ycfg.get("consistency",{}).get("lambdas", {"logic":0.7,"syntax":0.2,"constraints":0.1})
+    mlcfg = {k: ycfg["controllers"]["ltot"][k] for k in ("mainline_topk","mainline_width","delta","initial_lateral_width","eta","b0","micro_probe","overflow_cap","confirmation_temp","micro_beam","beta_alpha","order_set") if k in ycfg["controllers"]["ltot"]}
+    noisy = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
+    abls  = ycfg.get("ablations", [])
+    rows = []
+    for item in load_task(args.task, args.seed):
+        q = item.get("question") or item.get("prompt") or str(item.get("digits"))
+        V = verifier_for(args.task, item)
+        for ab in abls:
+            mlx = dict(mlcfg); mlx["admission_gate_cfg"] = ycfg.get("consistency",{}).get("admission_gate", {"enabled": False})
+            ctrl = LToTController(llm, LToTParams(), V, plateau_cfg=plate, bars_cfg=bars, lambdas=lamb, mainline_cfg=mlx, ablation=ab, early_stop=False)
+            score_expl = scorer_for_exploration(args.task, noisy if noisy.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+            out, tokens, expansions = ctrl.run(build_prompt(args.task,item), q, args.budget, args.task, scorer=score_expl, rng=random.Random(args.seed))
+            v = V(out)
+            rec = {"kind":"ablation_run","task":args.task,"qid":item["qid"],"model":args.model,
+                   "ablation":ab,"budget":args.budget,"seed":args.seed,"score":float(v),"tokens":int(tokens),"expansions":int(expansions)}
+            aw.write(rec); rows.append(rec)
+    return pd.DataFrame(rows)
+
+def do_run(args):
+    Path("results/raw").mkdir(parents=True, exist_ok=True)
+    ycfg = _load_cfg()
+    plateau_cfg = ycfg.get("plateau", {})
+    bars_cfg    = {**ycfg.get("bars", {}), "kappa":ycfg["controllers"]["ltot"]["kappa"], "delta":ycfg["controllers"]["ltot"]["delta"]}
+    lambdas     = ycfg.get("consistency",{}).get("lambdas", {"logic":0.7,"syntax":0.2,"constraints":0.1})
+    mainline_cfg= {k: ycfg["controllers"]["ltot"][k] for k in ("mainline_topk","mainline_width","delta","initial_lateral_width","eta","b0","micro_probe","overflow_cap","confirmation_temp","micro_beam","beta_alpha","order_set") if k in ycfg["controllers"]["ltot"]}
+    noisy_cfg   = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
+    parity      = ycfg.get("equal_compute", {})
+
+    aw = _mk_writer(args.out)
+    rng = random.Random(args.seed)
+    llm = make_llm(args.model)
+
+    if parity.get("calibrate", True) and args.shard == 0:
+        tasks_small = {}
+        for t in ycfg["tasks"]:
+            items = [it for i, it in zip(range(parity.get("sample_per_task",24)), load_task(t, args.seed))]
+            tasks_small[t] = items
+        state = calibrate_equal(
+            llm, tasks_small, {"target": args.budget},
+            methods=["CoT","ToT","MCTS-PW","LToT"],
+            seed=args.seed,
+            tol_pp=float(parity.get("tolerance_pp",2.0)),
+            sample_per_task=int(parity.get("sample_per_task",24)),
+            max_iters=int(parity.get("max_iters",4)),
+        )
+        aw.write({"kind":"calibration","state":state})
+
+    df = _main_grid(args, ycfg, llm, aw)
+
+    def mean_ci(series):
+        x = np.asarray(series, float); n = len(x)
+        m = float(np.mean(x))
+        se = float(np.std(x, ddof=1))/max(1, math.sqrt(n))
+        return m, 1.96*se
+
+    for (t, mth, mdl), g in df.groupby(["task","method","model"]):
+        m, ci = mean_ci(g["score"])
+        aw.write({"kind":"metric","task":t,"method":mth,"model":mdl,
+                  "budget":args.budget,"seed":args.seed,
+                  "metric":"Success@1" if t not in ("humaneval","mbpp_lite") else "Pass@1",
+                  "score": m, "ci95": ci,
+                  "median_tokens": float(np.median(g["tokens"]))})
+
+    for (t, mdl), g in df.groupby(["task","model"]):
+        target = float(args.budget)
+        med_by_method = g.groupby("method")["tokens"].median().to_dict()
+        for M, med in med_by_method.items():
+            err = 100.0*(float(med)-target)/max(1.0,target)
+            aw.write({"kind":"fairness","task":t,"model":mdl,"method":M,
+                      "target_tokens":target,"median_tokens":float(med),
+                      "error_pp": float(err)})
+
+    svg = main_equal_compute_figure(df)
+    aw.write({"kind":"figure_svg","name":"main_equal_compute","svg":svg})
+    aw.close()
+
+def do_widthscale(args):
+    Path("results/raw_width").mkdir(parents=True, exist_ok=True)
+    ycfg = _load_cfg()
+    aw = _mk_writer(args.out)
+    llm = make_llm(args.model)
+    _width_scaling(args, ycfg, llm, aw)
+    aw.close()
+
+def do_ablate(args):
+    Path("results/raw_ablate").mkdir(parents=True, exist_ok=True)
+    ycfg = _load_cfg()
+    aw = _mk_writer(args.out)
+    llm = make_llm(args.model)
+    _ablations(args, ycfg, llm, aw)
+    aw.close()
+
+def do_earlystop(args):
+    Path("results/raw_latency").mkdir(parents=True, exist_ok=True)
+    ycfg = _load_cfg()
+    aw = _mk_writer(args.out)
+    llm = make_llm(args.model)
+    noisy = ycfg.get("noisy_v_study", {"enabled":False,"temp_low":0.0,"temp_high":0.0})
+    for item in load_task(args.task, args.seed):
+        q = item.get("question") or item.get("prompt") or str(item.get("digits"))
+        V = verifier_for(args.task, item)
+        plate = ycfg.get("plateau", {})
+        bars  = {**ycfg.get("bars", {}), "kappa":ycfg["controllers"]["ltot"]["kappa"], "delta":ycfg["controllers"]["ltot"]["delta"]}
+        lamb  = ycfg.get("consistency",{}).get("lambdas", {"logic":0.7,"syntax":0.2,"constraints":0.1})
+        mlcfg = {k: ycfg["controllers"]["ltot"][k] for k in ("mainline_topk","mainline_width","delta","initial_lateral_width","eta","b0","micro_probe","overflow_cap","confirmation_temp","micro_beam","beta_alpha","order_set") if k in ycfg["controllers"]["ltot"]}
+        mlcfg["admission_gate_cfg"] = ycfg.get("consistency",{}).get("admission_gate", {"enabled": False})
+        score_expl = scorer_for_exploration(args.task, noisy if noisy.get("enabled",False) else {"temp_low":0.0,"temp_high":0.0}, item)
+        w0 = time.monotonic(); texts, toks = llm.generate([build_prompt(args.task,item)(q)], max_tokens=max(8, args.budget//4)); w1 = time.monotonic()
+        out = texts[0]; tok = int(toks[0]); hit = bool(V(out)>=1.0)
+        aw.write({"kind":"earlystop_latency","task":args.task,"qid":item["qid"],"model":args.model,"method":"CoT",
+                  "budget":args.budget,"seed":args.seed,"tokens":int(tok),"wall_s":float(w1-w0),"hit":hit,"expansions":1})
+        w0 = time.monotonic(); out, tok, exps = tot_baseline(llm, args.task, q, args.budget, beam=5, exploration_scorer=score_expl, return_tokens=True, verifier=V, early_stop=True); w1=time.monotonic()
+        aw.write({"kind":"earlystop_latency","task":args.task,"qid":item["qid"],"model":args.model,"method":"ToT",
+                  "budget":args.budget,"seed":args.seed,"tokens":int(tok),"wall_s":float(w1-w0),"hit":bool(V(out)>=1.0),"expansions":int(exps)})
+        w0 = time.monotonic(); out, tok, exps = mcts_pw_baseline(llm, args.task, q, args.budget, rollouts=64, exploration_scorer=score_expl, return_tokens=True, verifier=V, early_stop=True); w1=time.monotonic()
+        aw.write({"kind":"earlystop_latency","task":args.task,"qid":item["qid"],"model":args.model,"method":"MCTS-PW",
+                  "budget":args.budget,"seed":args.seed,"tokens":int(tok),"wall_s":float(w1-w0),"hit":bool(V(out)>=1.0),"expansions":int(exps)})
+        ctrl = LToTController(llm, LToTParams(), V, plateau_cfg=plate, bars_cfg=bars, lambdas=lamb, mainline_cfg=mlcfg, early_stop=True)
+        w0 = time.monotonic(); out, tok, exps = ctrl.run(build_prompt(args.task,item), q, args.budget, args.task, scorer=score_expl, rng=random.Random(args.seed)); w1=time.monotonic()
+        aw.write({"kind":"earlystop_latency","task":args.task,"qid":item["qid"],"model":args.model,"method":"LToT",
+                  "budget":args.budget,"seed":args.seed,"tokens":int(tok),"wall_s":float(w1-w0),"hit":bool(V(out)>=1.0),"expansions":int(exps)})
+    aw.close()
+
+def do_aggregate(args):
+    writer = ArtifactWriter(args.artifact)
+    run_rows = []; promo_rows = []; early_rows = []; ltot_runs = []
+    rungcost_rows = []
+    for path in sorted(glob.glob(os.path.join(args.inputs,"*.jsonl"))):
+        with open(path,"r",encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                writer.write(rec)
+                if rec.get("kind") == "run":
+                    run_rows.append(rec)
+                    if rec.get("method")=="LToT" and "N0" in rec:
+                        ltot_runs.append(rec)
+                if rec.get("kind") == "promotion_event":
+                    promo_rows.append(rec)
+                if rec.get("kind") == "rung_costs":
+                    rungcost_rows.append(rec)
+    for path in sorted(glob.glob(os.path.join(args.inputs_width,"*.jsonl"))):
+        with open(path,"r",encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                writer.write(rec)
+    for path in sorted(glob.glob(os.path.join(args.inputs_ablate,"*.jsonl"))):
+        with open(path,"r",encoding="utf-8") as f:
+            for line in f:
+                rec = json.loads(line)
+                writer.write(rec)
+    if getattr(args, "inputs_latency", None):
+        for path in sorted(glob.glob(os.path.join(args.inputs_latency, "*.jsonl"))):
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    rec = json.loads(line); writer.write(rec)
+                    if rec.get("kind")=="earlystop_latency": early_rows.append(rec)
+    writer.close()
+
+    if args.fig:
+        if run_rows:
+            df = pd.DataFrame(run_rows)
+            svg = main_equal_compute_figure(df)
+            os.makedirs(os.path.dirname(args.fig), exist_ok=True)
+            with open(args.fig, "w", encoding="utf-8") as f:
+                f.write(svg)
+
+    if promo_rows:
+        pdf = pd.DataFrame(promo_rows)
+        grp = pdf.groupby(["task","model","method","budget","seed"], dropna=False)
+        for keys, g in grp:
+            proposed = int(g["proposed"].sum())
+            accepted = int(g["accepted"].sum())
+            fpr = float((proposed - accepted) / max(1, proposed))
+            sel = float(accepted / max(1, proposed))
+            task, model, method, budget, seed = keys
+            with open(args.artifact, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"kind":"metric","task":task,"model":model,"method":method,
+                                    "budget":budget,"seed":seed,"metric":"false_promotion_rate",
+                                    "score":fpr})+"\n")
+                f.write(json.dumps({"kind":"metric","task":task,"model":model,"method":method,
+                                    "budget":budget,"seed":seed,"metric":"promotion_selectivity",
+                                    "score":sel})+"\n")
+
+    if ltot_runs:
+        ycfg = {}
+        try:
+            with open("configs/experiments.yaml","r") as yf: ycfg = yaml.safe_load(yf)
+        except Exception:
+            pass
+        eta = float(ycfg.get("controllers",{}).get("ltot",{}).get("eta", 4))
+        rdf = pd.DataFrame([r for r in run_rows if r.get("method")=="LToT" and "N0" in r and "expansions" in r])
+        if not rdf.empty:
+            X = np.asarray([r["N0"] * (math.log(max(2, r["N0"])) / math.log(eta)) for _, r in rdf.iterrows()], float)
+            Y = np.asarray([r["expansions"] for _, r in rdf.iterrows()], float)
+            if len(X) >= 2 and np.var(X) > 0:
+                A = np.vstack([X, np.ones_like(X)]).T
+                a, b = np.linalg.lstsq(A, Y, rcond=None)[0]
+                Yhat = a*X + b
+                ss_res = float(np.sum((Y - Yhat)**2))
+                ss_tot = float(np.sum((Y - np.mean(Y))**2))
+                R2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else 0.0
+                with open(args.artifact, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"kind":"metric","task":"_pooled_","model":"_all_","method":"LToT",
+                                         "budget":"_pooled_","metric":"cost_fit_R2_expansions",
+                                         "score":float(R2)})+"\n")
+        if rungcost_rows:
+            import statistics as _stats
+            groups = {}
+            for rc in rungcost_rows:
+                key = (rc["task"], rc["model"], rc.get("method","LToT"), rc["budget"], rc["seed"])
+                groups.setdefault(key, []).append(rc.get("rung_costs", []))
+            with open(args.artifact, "a", encoding="utf-8") as f:
+                for (task, model, method, budget, seed), arrays in groups.items():
+                    cvs, nrungs = [], []
+                    for arr in arrays:
+                        arr = [float(x) for x in (arr or [])]
+                        if len(arr) >= 2 and (sum(arr) > 0):
+                            m = _stats.mean(arr)
+                            s = _stats.pstdev(arr)
+                            cvs.append( (s / m) if m > 0 else 0.0 )
+                            nrungs.append(len(arr))
+                    if cvs:
+                        cv_mean = float(_stats.mean(cvs))
+                        nr_mean = float(_stats.mean(nrungs)) if nrungs else 0.0
+                        nr_sd   = float(_stats.pstdev(nrungs)) if len(nrungs) >= 2 else 0.0
+                        f.write(json.dumps({"kind":"metric","task":task,"model":model,"method":method,
+                                             "budget":budget,"metric":"rung_cost_cv_mean","score":cv_mean})+"\n")
+                        f.write(json.dumps({"kind":"metric","task":task,"model":model,"method":method,
+                                             "budget":budget,"metric":"num_rungs_mean","score":nr_mean})+"\n")
+                        f.write(json.dumps({"kind":"metric","task":task,"model":model,"method":method,
+                                             "budget":budget,"metric":"num_rungs_sd","score":nr_sd})+"\n")
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("run")
+    r.add_argument("--model", required=True)
+    r.add_argument("--task", required=True)
+    r.add_argument("--budget", type=int, required=True)
+    r.add_argument("--seed", type=int, required=True)
+    r.add_argument("--out", required=True)
+    r.add_argument("--shard", type=int, default=0)
+
+    w = sub.add_parser("widthscale")
+    w.add_argument("--model", required=True)
+    w.add_argument("--task", required=True)
+    w.add_argument("--budget", type=int, required=True)
+    w.add_argument("--seed", type=int, required=True)
+    w.add_argument("--out", required=True)
+    w.add_argument("--shard", type=int, default=0)
+
+    a = sub.add_parser("ablate")
+    a.add_argument("--model", required=True)
+    a.add_argument("--task", required=True)
+    a.add_argument("--budget", type=int, required=True)
+    a.add_argument("--seed", type=int, required=True)   # <-- fixed (type=int)
+    a.add_argument("--out", required=True)
+    a.add_argument("--shard", type=int, default=0)      # <-- fixed (type=int)
+
+    g = sub.add_parser("aggregate")
+    g.add_argument("--inputs", required=True)
+    g.add_argument("--inputs_width", required=True)
+    g.add_argument("--inputs_ablate", required=True)
+    g.add_argument("--inputs_latency", required=False, default=None)
+    g.add_argument("--artifact", required=True)
+    g.add_argument("--fig", required=True)
+
+    es = sub.add_parser("earlystop")
+    es.add_argument("--model", required=True)
+    es.add_argument("--task", required=True)
+    es.add_argument("--budget", type=int, required=True)
+    es.add_argument("--seed", type=int, required=True)
+    es.add_argument("--out", required=True)
+    es.add_argument("--shard", type=int, default=0)
+
+    args = ap.parse_args()
+    if args.cmd=="run": do_run(args)
+    elif args.cmd=="widthscale": do_widthscale(args)
+    elif args.cmd=="ablate": do_ablate(args)
+    elif args.cmd=="earlystop": do_earlystop(args)
+    else: do_aggregate(args)
+
+if __name__=="__main__":
+    main()
+
+==> ./ltot/__init__.py <==
+__all__ = []
+
+==> ./ltot/plotting/figures.py <==
+import pandas as pd
+
+def main_equal_compute_figure(df: pd.DataFrame) -> str:
+    lines = []
+    for (t, mth), g in df.groupby(["task","method"]):
+        score = float(g["score"].mean())
+        lines.append(f"{t}:{mth}:{score:.3f}")
+    text = "\\n".join(lines)
+    svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><text x="10" y="20" font-size="14">{text}</text></svg>'
+    return svg
+
+==> ./ltot/calibrate.py <==
+import json, os
+from statistics import median
+
+def _median(arr): 
+    a = list(arr)
+    return float(median(a)) if a else 0.0
+
+def calibrate(llm, tasks, budgets, methods, seed, tol_pp=2.0, sample_per_task=24, max_iters=4):
+    """
+    Bisection-style tuner. Adjusts:
+      - CoT: max_new_tokens
+      - ToT: beam
+      - MCTS-PW: rollouts
+      - LToT: initial_lateral_width (N0)
+    to match median tokens ~= target budget per (task,method) within ±tol% over a small sample.
+    """
+    os.makedirs("results", exist_ok=True)
+    state = {"seed": int(seed), "knobs": {}}
+
+    def measure_tokens(method, task, item, knob_val, target_budget):
+        from .run_support import dry_run_tokens
+        return dry_run_tokens(llm, method, task, item, knob_val, target_budget)
+
+    for task, items in tasks.items():
+        state["knobs"].setdefault(task, {})
+        for method in methods:
+            if method=="ToT":
+                lo, hi = 1, 16
+            elif method=="MCTS-PW":
+                lo, hi = 8, 256
+            elif method=="LToT":
+                lo, hi = 32, 1024
+            elif method=="CoT":
+                lo, hi = 32, max(64, int(budgets["target"]*2))
+            else:
+                continue
+            target = budgets["target"]
+            mid = lo
+            for _ in range(max_iters):
+                mid = int((lo+hi)//2)
+                toks = []
+                for i, item in enumerate(items[:sample_per_task]):
+                    toks.append(measure_tokens(method, task, item, mid, target))
+                med_tokens = _median(toks)
+                err = 100.0*(med_tokens - target)/max(1.0, target)
+                if abs(err) <= tol_pp: break
+                if med_tokens > target: hi = max(lo, mid-1)
+                else: lo = min(hi, mid+1)
+            state["knobs"][task][method] = int(mid)
+
+    with open("results/calibration.json","w") as f:
+        json.dump(state, f, indent=2)
+    return state
+
+==> ./ltot/search/diagnostics.py <==
+from typing import Callable, Tuple, List
+from .baselines import cot_prompt
+
+class _Branch:
+    __slots=("text","score")
+    def __init__(self, text:str, score:float=0.0):
+        self.text=text; self.score=float(score)
+
+def sh_only_lateralization(model, task: str, q: str, budget_tokens: int,
+                           scorer: Callable, initial_width: int=128,
+                           eta:int=4, b0:int=1, micro_beam:int=3) -> Tuple[str,int,int]:
+    tokens_spent, expansions = 0, 0
+    laterals: List[_Branch] = []
+    for _ in range(int(initial_width)):
+        outs, toks = model.generate([f"{cot_prompt(q)}\nConsider a logically different path:"], max_tokens=max(24, budget_tokens//96), temperature=0.8, top_p=0.95)
+        tokens_spent += int(toks[0]); expansions += 1
+        s, vcost = scorer(model, task, outs[0]); tokens_spent += int(vcost)
+        laterals.append(_Branch(outs[0], s))
+
+    r = 0
+    while laterals and tokens_spent < budget_tokens:
+        Qr = max(1, len(laterals)//max(2, eta))
+        laterals.sort(key=lambda b: b.score, reverse=True)
+        keep = laterals[:Qr]
+        next_laterals: List[_Branch] = []
+        step_tokens = max(24, int(b0 * (eta ** r) * max(16, budget_tokens//(initial_width*8))))
+        for br in keep:
+            outs, toks = model.generate([br.text + "\nContinue one step:" for _ in range(micro_beam)], max_tokens=step_tokens, temperature=0.8, top_p=0.95)
+            tokens_spent += int(sum(toks)); expansions += len(outs)
+            scores = []
+            for o in outs:
+                s, vcost = scorer(model, task, o); tokens_spent += int(vcost)
+                scores.append(float(s))
+            br.text = (br.text + "\n" + outs[0]).strip()
+            br.score = sum(sorted(scores)[-micro_beam:])/float(micro_beam)
+            next_laterals.append(br)
+        laterals = next_laterals
+        r += 1
+        if len(laterals) <= 1: break
+
+    best = max(laterals, key=lambda b: b.score) if laterals else _Branch("")
+    return best.text, tokens_spent, expansions
+
+def sh_on_mainlines(model, task: str, q: str, budget_tokens: int,
+                    scorer: Callable, beam:int=8, eta:int=4, b0:int=1) -> Tuple[str,int,int]:
+    tokens_spent, expansions = 0, 0
+    main: List[_Branch] = []
+    outs, toks = model.generate([cot_prompt(q) for _ in range(beam)], max_tokens=max(32, budget_tokens//32), temperature=0.7, top_p=0.95)
+    tokens_spent += int(sum(toks)); expansions += len(outs)
+    for o in outs:
+        s, vcost = scorer(model, task, o); tokens_spent += int(vcost)
+        main.append(_Branch(o, s))
+    r = 0
+    while main and tokens_spent < budget_tokens:
+        Qr = max(1, len(main)//max(2, eta))
+        main.sort(key=lambda b: b.score, reverse=True)
+        keep = main[:Qr]; next_main=[]
+        step_tokens = max(24, int(b0 * (eta ** r) * max(16, budget_tokens//(beam*16))))
+        for br in keep:
+            out, toks = model.generate([br.text + "\nContinue:"], max_tokens=step_tokens, temperature=0.7, top_p=0.95)
+            tokens_spent += int(toks[0]); expansions += 1
+            s, vcost = scorer(model, task, out[0]); tokens_spent += int(vcost)
+            br.text = (br.text + "\n" + out[0]).strip(); br.score = float(s)
+            next_main.append(br)
+        main = next_main
+        r += 1
+        if len(main) <= 1: break
+    best = max(main, key=lambda b: b.score) if main else _Branch("")
+    return best.text, tokens_spent, expansions
+
+==> ./ltot/search/lrsc.py <==
+from typing import List, Dict, Any, Tuple, Callable
+import numpy as np
+import math, random
+from ..scorers.consistency import c_local_score
+
+def robust_z(vals, winsor=None):
+    x = np.asarray(vals, float)
+    if winsor:
+        lo, hi = np.percentile(x, [100*winsor/1000.0, 100-100*winsor/1000.0])
+        x = np.clip(x, lo, hi)
+    med = np.median(x)
+    mad = np.median(np.abs(x - med)) + 1e-8
+    return (x - med) / (1.4826 * mad), med, 1.4826*mad
+
+def effective_width_from_corr(z_pred):
+    x = np.asarray(z_pred, float)
+    if len(x) < 2: return max(1, len(x))
+    diffs = np.diff(np.sort(x))
+    v = np.var(diffs) + 1e-8
+    rho = 1.0/(1.0+10.0*v)
+    return int(max(1, round((1-rho) * len(x))))
+
+def width_aware_bar(n_eff: int, m_orders: int, bar_cfg: Dict[str,Any]) -> float:
+    tail   = bar_cfg.get("tail_model", "subgaussian")
+    kappa  = float(bar_cfg.get("kappa", 1.0))
+    delta  = float(bar_cfg.get("delta", 0.0))
+    neffM  = max(2, int(max(1, n_eff)) * max(1, int(m_orders)))
+    if tail == "subgaussian":
+        return kappa * math.sqrt(2.0 * math.log(neffM)) + delta
+    if tail == "subgamma":
+        nu = float(bar_cfg.get("subgamma",{}).get("nu",1.0))
+        c  = float(bar_cfg.get("subgamma",{}).get("c",1.0))
+        return kappa * (math.sqrt(2.0*nu*math.log(neffM)) + c*math.log(neffM)) + delta
+    if tail == "subweibull":
+        K = float(bar_cfg.get("subweibull",{}).get("K",1.0))
+        alpha = float(bar_cfg.get("subweibull",{}).get("alpha",1.5))
+        return K * (math.log(neffM) ** (1.0/max(alpha,1e-6))) + delta
+    return kappa * math.sqrt(2.0 * math.log(neffM)) + delta
+
+def _poly_forecast(C_hist, Vtil, orders=(1,2)):
+    gains = {}
+    x = np.asarray(C_hist[-4:], float)
+    y = np.asarray(Vtil[-4:], float)
+    if len(x) < 2: return gains
+    x = x - x.min()
+    for m in orders:
+        deg = min(m, len(x)-1)
+        if deg <= 0: continue
+        coef = np.polyfit(x, y, deg=deg)
+        p = np.poly1d(coef); dp = np.polyder(p, 1)
+        gains[m] = float(dp(x[-1]))
+    return gains
+
+class BranchState:
+    def __init__(self, root_text:str, parent_text:str, origin:str):
+        self.root_text = root_text
+        self.parent_text = parent_text
+        self.origin = origin
+        self.tokens_spent = 0
+        self.envelope_hist: List[Tuple[int, float, float, float]] = []
+        self.accum_text = (parent_text + "\n" + root_text).strip()
+
+class LRSC:
+    def __init__(self, model, scorer, bar_cfg, eta:int, b0:int, micro_probe:int, overflow_cap:float,
+                 order_set:Tuple[int,...]=(1,2), use_width_bar:bool=True, allow_short_circuit:bool=True,
+                 require_confirm:bool=True, confirm_temps:Tuple[float,float]=(0.7,0.95),
+                 micro_beam:int=3, beta_alpha:float=0.5, envelope_cfg=None, noise_cfg=None,
+                 dual_gate_cfg: Dict[str,Any] = None):
+        self.model = model
+        self.scorer = scorer
+        self.bar_cfg = bar_cfg
+        self.eta = eta
+        self.b0 = b0
+        self.micro_probe = micro_probe
+        self.overflow_cap = overflow_cap
+        self.order_set = tuple(int(m) for m in (order_set or (1,)))
+        self.use_width_bar = use_width_bar
+        self.allow_short_circuit = allow_short_circuit
+        self.require_confirm = bool(require_confirm)
+        self.confirm_temps = confirm_temps
+        self.micro_beam = max(1, int(micro_beam))
+        self.beta_alpha = float(beta_alpha)
+        self.envelope_cfg = envelope_cfg or {"agg":"topk"}
+        self.noise_cfg = noise_cfg or {"enabled": False}
+        self.dual = (dual_gate_cfg or {"enabled": False, "tau_c": 0.75, "q": 0.25})
+
+    def run(self, laterals: List[BranchState], Bt: float, task: str, budget_tokens: int,
+            lambdas: Dict[str,float], rng, verifier: Callable[[str], float], log_callback=None):
+        def log(rec):
+            if log_callback: log_callback(rec)
+
+        def _aggregate(scores):
+            if not scores: return 0.0, float(self.micro_beam)
+            agg = (self.envelope_cfg.get("agg") or "topk").lower()
+            xs = np.asarray(scores, float)
+            if agg == "trimmed":
+                f = float(self.envelope_cfg.get("trim_frac", 0.15))
+                n = len(xs); k = int(max(0, min(n//2, round(f*n))))
+                if 2*k >= n: return float(xs.mean()), float(min(n, self.micro_beam))
+                x = np.sort(xs)[k: n-k]; Keff = float(len(x))
+                return float(x.mean()), Keff
+            if agg == "power":
+                p = float(self.envelope_cfg.get("power_p", 1.5))
+                x = np.maximum(xs, 1e-8)**p; Keff = float(len(xs))
+                return float((x.mean())**(1.0/p)), Keff
+            if agg == "weighted":
+                beta = 5.0
+                w = np.exp(beta*(xs - xs.max()))
+                w = w / max(1e-8, w.sum())
+                wmax = float(self.envelope_cfg.get("omega_max", 0.7))
+                w = np.minimum(w, wmax); w = w / max(1e-8, w.sum())
+                Keff = 1.0/float(np.sum(w*w) + 1e-8)
+                return float(np.sum(w*xs)), float(Keff)
+            k = max(1, min(self.micro_beam, len(xs)))
+            x = np.mean(np.sort(xs)[-k:])
+            return float(x), float(k)
+
+        def _beta_smooth(v, k_eff):
+            a = self.beta_alpha
+            return float((k_eff * v + a) / (k_eff + 2*a))
+
+        def _ht_noise(scale: float, tail: str) -> float:
+            t = (tail or "laplace").lower()
+            if t == "studentt":
+                return float(np.random.standard_t(df=2)) * scale
+            return float(np.random.laplace(0.0, scale))
+
+        def _probe_once(br: BranchState, prompt_suffix:str, max_tokens:int, temperature:float=0.8, top_p:float=0.95):
+            prompts = [br.accum_text + "\n" + prompt_suffix for _ in range(self.micro_beam)]
+            outs, toks = self.model.generate(prompts, max_tokens=max_tokens, temperature=temperature, top_p=top_p)
+            tcost = int(sum(toks)); scores=[]
+            for o in outs:
+                s, vcost = self.scorer(self.model, task, o); tcost += int(vcost)
+                if self.noise_cfg.get("enabled", False):
+                    tail  = str(self.noise_cfg.get("tail", "laplace"))
+                    scale = float(self.noise_cfg.get("scale", 0.15))
+                    rho   = float(self.noise_cfg.get("corr_rho", 0.20))
+                    xi    = _ht_noise(scale, tail)
+                    s = s + rho * rung_shared + math.sqrt(max(0.0, 1.0 - rho*rho)) * xi
+                    s = max(0.0, min(1.0, float(s)))
+                scores.append(float(s))
+            return outs, scores, tcost, len(outs)
+
+        def _update_envelope(br: BranchState, scores: List[float], tcost: int):
+            V, Keff = _aggregate(scores)
+            Vt = _beta_smooth(V, float(Keff))
+            h  = (br.envelope_hist[-1][0] + 1) if br.envelope_hist else 1
+            C  = (br.envelope_hist[-1][1] if br.envelope_hist else 0.0) + float(tcost)
+            br.envelope_hist.append((h, C, V, Vt))
+            return V, Vt
+
+        def _with_ctx(br: BranchState, s: str) -> str:
+            return (br.accum_text + "\n" + s).strip()
+
+        def _any_verified(br: BranchState, seq):
+            for s in seq:
+                if verifier(_with_ctx(br, s)) >= 1.0:
+                    return True
+            return False
+
+        def _first_verified_text(br: BranchState, seq, fallback: str) -> str:
+            for s in seq:
+                if verifier(_with_ctx(br, s)) >= 1.0:
+                    return _with_ctx(br, s)
+            return _with_ctx(br, fallback)
+
+        def _passes_consistency_gate(parent_text: str, steps: List[str]) -> Tuple[bool, float, int]:
+            if not self.dual.get("enabled", False) or not steps:
+                return True, 1.0, 0
+            q = float(self.dual.get("q", 0.25))
+            scores, cost = [], 0
+            for s in steps:
+                c, ccost = c_local_score(self.model, parent_text, s, temperature=0.0)
+                scores.append(float(c)); cost += int(ccost)
+            if not scores:
+                return True, 1.0, cost
+            scores = np.asarray(scores, float)
+            cq = float(np.quantile(scores, q))
+            return (cq >= float(self.dual.get("tau_c", 0.75))), cq, cost
+
+        tokens_spent = 0
+        rung_costs = []
+        Sr = list(laterals)
+        r = 0
+        promoted_text = None
+        survivors: List[BranchState] = []
+        initial_n = len(Sr) if Sr else 1
+        total_expansions = 0
+        rung_expansions = []
+        rung_shared = 0.0
+
+        while Sr and tokens_spent < budget_tokens:
+            before = tokens_spent
+            expansions_this_rung = 0
+            if self.noise_cfg.get("enabled", False):
+                rung_shared = _ht_noise(float(self.noise_cfg.get("scale", 0.15)), str(self.noise_cfg.get("tail", "laplace")))
+
+            denom = max(8, initial_n * (self.eta ** max(0, r)) * 4)
+            unit_tokens  = max(16, int((budget_tokens - tokens_spent) / denom))
+            full_tokens  = max(24, int(self.b0 * (self.eta ** r) * unit_tokens))
+            micro_tokens = max(16, int(self.micro_probe * unit_tokens))
+
+            for br in Sr:
+                if not br.envelope_hist:
+                    outs, scores, tcost, nexp = _probe_once(br, "Continue one step:", max_tokens=micro_tokens)
+                    tokens_spent += tcost; br.tokens_spent += tcost
+                    expansions_this_rung += int(nexp); total_expansions += int(nexp)
+                    _update_envelope(br, scores, tcost)
+
+            z_pred = []
+            C_hist, Vt_hist = {}, {}
+            for br in Sr:
+                C_hist[br] = [C for (h,C,V,Vt) in br.envelope_hist][-4:] if br.envelope_hist else []
+                Vt_hist[br]= [Vt for (h,C,V,Vt) in br.envelope_hist][-4:] if br.envelope_hist else []
+
+            for br in Sr:
+                orders = tuple(self.order_set) if self.order_set else (1,)
+                gains = _poly_forecast(C_hist.get(br,[]), Vt_hist.get(br,[]), orders=orders)
+                z_pred.append(max(gains.values()) if gains else -1e9)
+
+            z, mu, s = robust_z(z_pred, winsor=self.bar_cfg.get("winsorize_z", None))
+            n_eff = effective_width_from_corr(z_pred) if self.use_width_bar else len(Sr)
+            m_orders = len(self.order_set) if self.order_set else 1
+            bar = width_aware_bar(n_eff, m_orders, self.bar_cfg)
+
+            order = np.argsort(-z)
+            Qr = max(1, len(Sr)//max(2, self.eta))
+            keep_idx = order[:Qr]
+            overflow_budget = int(self.overflow_cap * len(Sr))
+            overflow_idx = [i for i in order[Qr:Qr+overflow_budget] if (z[i] >= bar)]
+
+            next_S = []
+            for idx in keep_idx:
+                br = Sr[idx]
+                outs, scores, tcost, nexp = _probe_once(br, "Continue one step:", max_tokens=full_tokens)
+                tokens_spent += tcost; br.tokens_spent += tcost
+                expansions_this_rung += int(nexp); total_expansions += int(nexp)
+                V, Vt = _update_envelope(br, scores, tcost)
+                if self.allow_short_circuit and (V >= (Bt + float(self.bar_cfg.get("delta",0.0)))):
+                    proposed_ok = _any_verified(br, outs)
+                    accepted = False
+                    outs2 = []
+                    if proposed_ok:
+                        if self.require_confirm:
+                            t_lo, t_hi = self.confirm_temps
+                            ctemp = random.uniform(t_lo, t_hi)
+                            outs2, _, tcost2, nexp2 = _probe_once(
+                                br, "Re-derive the final step succinctly:", max_tokens=micro_tokens,
+                                temperature=ctemp, top_p=0.9
+                            )
+                            tokens_spent += tcost2; br.tokens_spent += tcost2
+                            expansions_this_rung += int(nexp2); total_expansions += int(nexp2)
+                            accepted = _any_verified(br, outs2)
+                        else:
+                            accepted = True
+                    if accepted:
+                        steps_for_gate = (outs2 if (outs2 and self.require_confirm) else outs)
+                        ok_c, cval, ccost = _passes_consistency_gate(br.accum_text, steps_for_gate)
+                        tokens_spent += ccost; br.tokens_spent += ccost
+                        accepted = accepted and ok_c
+                    log({"kind":"promotion_event","origin":"keeper","z":float(z[idx]),"bar":float(bar),
+                         "proposed": bool(proposed_ok), "accepted": bool(accepted), "rung": int(r)})
+                    if accepted:
+                        promoted_text = _first_verified_text(br, outs2 if outs2 else outs, fallback=(outs2[0] if outs2 else outs[0]))
+                        break
+                next_S.append(br)
+            if promoted_text:
+                rung_costs.append(tokens_spent - before)
+                rung_expansions.append(int(expansions_this_rung))
+                break
+
+            for idx in overflow_idx:
+                br = Sr[idx]
+                outs, scores, tcost, nexp = _probe_once(
+                    br, "Re-evaluate via an alternative step order:",
+                    max_tokens=micro_tokens, temperature=0.9, top_p=0.9
+                )
+                tokens_spent += tcost; br.tokens_spent += tcost
+                expansions_this_rung += int(nexp); total_expansions += int(nexp)
+                V, Vt = _update_envelope(br, scores, tcost)
+                outs_c, scores_c, tcost_c, nexp_c = [], [], 0, 0
+                Vc = Vt
+                if self.require_confirm:
+                    t_lo, t_hi = self.confirm_temps
+                    outs_c, scores_c, tcost_c, nexp_c = _probe_once(
+                        br, "Independent confirmation of the previous step:",
+                        max_tokens=micro_tokens, temperature=random.uniform(t_lo,t_hi), top_p=0.9
+                    )
+                    tokens_spent += tcost_c; br.tokens_spent += tcost_c
+                    expansions_this_rung += int(nexp_c); total_expansions += int(nexp_c)
+                    Vc, _ = _update_envelope(br, scores_c, tcost_c)
+
+                orders = tuple(self.order_set) if self.order_set else (1,)
+                C_hist_conf = [C for (h,C,_,_) in br.envelope_hist][-4:]
+                Vt_hist_conf= [Vt for (h,_,_,Vt) in br.envelope_hist][-4:]
+                gains_conf   = _poly_forecast(C_hist_conf, Vt_hist_conf, orders=orders)
+                z_conf = (max(gains_conf.values()) - mu)/(s + 1e-8) if gains_conf else -1e9
+
+                promoted_here = False
+                if self.allow_short_circuit and (Vc >= (Bt + float(self.bar_cfg.get("delta",0.0)))):
+                    if self.require_confirm:
+                        proposed_ok = _any_verified(br, outs_c)
+                        accepted = proposed_ok
+                        used_seq = outs_c
+                    else:
+                        proposed_ok = _any_verified(br, outs)
+                        accepted = proposed_ok
+                        used_seq = outs
+                    if accepted:
+                        ok_c, cval, ccost = _passes_consistency_gate(br.accum_text, used_seq)
+                        tokens_spent += ccost; br.tokens_spent += ccost
+                        accepted = accepted and ok_c
+                    log({"kind":"promotion_event","origin":"overflow","z":float(z[idx]),"bar":float(bar),
+                         "proposed": bool(proposed_ok), "accepted": bool(accepted), "rung": int(r)})
+                    if accepted:
+                        promoted_text = _first_verified_text(br, used_seq, fallback=(used_seq[0] if used_seq else (outs[0] if outs else br.accum_text)))
+                        promoted_here = True
+                if promoted_here:
+                    next_S.append(br); 
+
+                keep_overflow = (z_conf >= bar)
+                log({"kind":"overflow_survivor","rung":int(r),"z_conf":float(z_conf),"bar":float(bar),
+                     "kept": bool(keep_overflow)})
+                if keep_overflow:
+                    next_S.append(br)
+
+            rung_costs.append(tokens_spent - before)
+            rung_expansions.append(int(expansions_this_rung))
+            log({"kind":"lrsc_rung","rung":int(r),"n_before":int(len(Sr)),"n_survive":int(len(next_S)),
+                 "bar":float(bar),"tokens_delta":int(rung_costs[-1])})
+            log({"kind":"rung_expansions","rung_expansions":[int(expansions_this_rung)]})
+            Sr = next_S
+            r += 1
+
+        if promoted_text:
+            return promoted_text, Sr, tokens_spent, rung_costs, rung_expansions, total_expansions
+        return None, Sr, tokens_spent, rung_costs, rung_expansions, total_expansions
+
+==> ./ltot/search/ltot_controller.py <==
+from typing import Dict, Any, List, Tuple, Callable
+import random, math, numpy as np
+from .lrsc import LRSC, BranchState
+from ..scorers.consistency import c_local_score
+
+class Branch:
+    def __init__(self, text:str, v_hist:List[float], h_hist:List[int], origin:str):
+        self.text=text; self.v_hist=v_hist; self.h_hist=h_hist; self.origin=origin
+
+class LToTController:
+    def __init__(self, model, params, verifier, plateau_cfg, bars_cfg, lambdas, mainline_cfg,
+                 ablation: str = None, early_stop: bool = False):
+        self.model = model
+        self.verifier = verifier
+        self.plateau_cfg = plateau_cfg
+        self.bar_cfg = bars_cfg
+        self.lambdas = lambdas
+        self.mainline_cfg = mainline_cfg
+        self.admission_cfg = dict(mainline_cfg.get("admission_gate_cfg", {"enabled": False}))
+        self.ablation = ablation
+        self.early_stop = early_stop
+        self.progress_ewma = 0.0
+        self.progress_lastC = 0
+        self.progress_pat = 0
+        self.frozen_survivors: List[BranchState] = []
+
+    def run(self, prompt_builder, q, budget_tokens: int, task:str, scorer, rng,
+            return_logs: bool=False, log_callback=None):
+        tokens_spent = 0
+        expansions_total = 0
+        mainlines = []
+        txts, toks = self.model.generate([prompt_builder(q)], max_tokens=max(32, budget_tokens//8))
+        tokens_spent += int(toks[0]); expansions_total += 1
+        mainlines.append(Branch(text=txts[0], v_hist=[self.verifier(txts[0])], h_hist=[0], origin="MAIN"))
+        Bt = max(b.v_hist[-1] for b in mainlines)
+
+        proposals = []
+        rung_costs_all = []
+
+        def plateau_ok(deltaC):
+            if self.ablation == "no_plateau":
+                return False
+            beta = self.plateau_cfg.get("ewma_beta", 0.3)
+            tau = self.plateau_cfg.get("tau", 1e-4)
+            hyster = self.plateau_cfg.get("hysteresis", 5e-5)
+            minC = self.plateau_cfg.get("min_compute_delta", 8)
+            if deltaC < minC: return True
+            inc = (max(b.v_hist[-1] for b in mainlines) - Bt) / max(1, deltaC)
+            self.progress_ewma = (beta)*inc + (1-beta)*self.progress_ewma
+            return self.progress_ewma >= (tau - hyster)
+
+        while tokens_spent < budget_tokens:
+            started_C = tokens_spent
+            steps = 0
+            while tokens_spent < budget_tokens:
+                outs, toks = self.model.generate([mainlines[0].text + "\nContinue:"], max_tokens=max(24, budget_tokens//64))
+                tokens_spent += int(toks[0]); expansions_total += 1
+                mainlines[0].text += "\n" + outs[0]
+                vnow = self.verifier(mainlines[0].text)
+                mainlines[0].v_hist.append(vnow)
+                mainlines[0].h_hist.append(mainlines[0].h_hist[-1]+1)
+                newBt = max(b.v_hist[-1] for b in mainlines)
+                dBt = newBt - Bt
+                Bt = newBt
+                steps += 1
+                deltaC = tokens_spent - started_C
+                inc = dBt / max(1, deltaC)
+                beta = self.plateau_cfg.get("ewma_beta",0.3)
+                self.progress_ewma = beta*inc + (1-beta)*self.progress_ewma
+                if self.early_stop and vnow >= 1.0:
+                    if return_logs:
+                        return (mainlines[0].text, tokens_spent, rung_costs_all, proposals, expansions_total)
+                    return (mainlines[0].text, tokens_spent, expansions_total)
+                if not plateau_ok(deltaC):
+                    break
+
+            initial_width = int(self.mainline_cfg.get("initial_lateral_width", 128))
+            laterals = self.frozen_survivors[:]; self.frozen_survivors = []
+            for _ in range(max(0, initial_width - len(laterals))):
+                outs, toks = self.model.generate(
+                    [mainlines[0].text + "\nConsider a logically different path:"],
+                    max_tokens=max(32, budget_tokens//96), temperature=0.8, top_p=0.95
+                )
+                cand = outs[0].strip()
+                tokens_spent += int(toks[0]); expansions_total += 1
+                admit = True; cval = None; ccost = 0
+                if self.admission_cfg.get("enabled", False):
+                    # Admission gate: c_local >= tau_c (+ tightening if LM-only)
+                    t_c = float(self.admission_cfg.get("temperature", 0.0))
+                    cval, ccost = c_local_score(self.model, mainlines[0].text, cand, temperature=t_c)
+                    tokens_spent += int(ccost)
+                    tau_c = float(self.admission_cfg.get("tau_c", 0.75))
+                    # Tighten if syntax/constraints are effectively absent and logic carries weight
+                    if (self.lambdas.get("syntax", 0.0) + self.lambdas.get("constraints", 0.0)) <= 1e-6 \
+                       and self.lambdas.get("logic", 0.0) >= 0.7:
+                        tau_c += float(self.admission_cfg.get("tighten_if_lmonly", 0.10))
+                    admit = (float(cval) >= tau_c)
+                    if log_callback:
+                        log_callback({"kind":"admission_event","c": float(cval), "tau_c": float(tau_c), "accepted": bool(admit)})
+                if admit:
+                    laterals.append(BranchState(root_text=cand, parent_text=mainlines[0].text, origin="LAT"))
+
+
+            ab = self.ablation or ""
+            lrsc = LRSC(
+                self.model, scorer, self.bar_cfg,
+                eta=self.mainline_cfg.get("eta",4),
+                b0=self.mainline_cfg.get("b0",1),
+                micro_probe=self.mainline_cfg.get("micro_probe",1),
+                overflow_cap=(0.0 if ab=="overflow_off" else self.mainline_cfg.get("overflow_cap",0.15)),
+                order_set=((1,) if ab=="no_curvature" else tuple(self.mainline_cfg.get("order_set",[1,2]))),
+                use_width_bar=(ab!="no_width_bar"),
+                allow_short_circuit=(ab!="no_short_circuit"),
+                require_confirm=(ab!="no_confirm"),
+                confirm_temps=tuple(self.mainline_cfg.get("confirmation_temp",[0.7,0.95])),
+                micro_beam=int(self.mainline_cfg.get("micro_beam",3)),
+                beta_alpha=float(self.mainline_cfg.get("beta_alpha",0.5)),
+                envelope_cfg=self.mainline_cfg.get("envelope_cfg", None),
+                noise_cfg=self.mainline_cfg.get("noise_cfg", None),
+                dual_gate_cfg=self.mainline_cfg.get("dual_gate_cfg", None)
+            )
+            promoted, survivors, spend, rung_costs, rung_expansions, exp_add = lrsc.run(
+                laterals, Bt, task, budget_tokens - tokens_spent, self.lambdas, rng, verifier=self.verifier,
+                log_callback=(lambda rec: log_callback(rec) if log_callback else None)
+            )
+            tokens_spent += spend; expansions_total += int(exp_add)
+            rung_costs_all.extend(rung_costs)
+            if return_logs and log_callback:
+                log_callback({"kind":"rung_expansions","rung_expansions":[int(x) for x in rung_expansions]})
+            self.frozen_survivors = survivors
+            if promoted:
+                mainlines = [Branch(text=promoted, v_hist=[self.verifier(promoted)], h_hist=[0], origin="MAIN")]
+                Bt = max(b.v_hist[-1] for b in mainlines)
+            if tokens_spent >= budget_tokens:
+                break
+
+        best = max(mainlines, key=lambda b: self.verifier(b.text)) if mainlines else None
+        if return_logs:
+            return (best.text if best else "", tokens_spent, rung_costs_all, proposals, expansions_total)
+        return (best.text if best else "", tokens_spent, expansions_total)
+
+==> ./ltot/search/baselines.py <==
+from typing import List, Tuple, Callable, Optional
+import math, random
+from ..scorers.vlm import vlm_score
+
+def cot_prompt(q: str) -> str:
+    return f"Think step by step.\nQuestion: {q}\nAnswer:"
+
+def scorer_for(task: str):
+    if task in ("gsm_plus","gsm_hard","math_500","game24"):
+        return lambda model, task, text: vlm_score(model, "math/logic question", text)
+    elif task in ("humaneval","mbpp_lite"):
+        def score_code(model, task, text):
+            ok = "def " in text; return (1.0 if ok else 0.0, 0)
+        return score_code
+    else:
+        return lambda model, task, text: (0.5, 0)
+
+def tot_baseline(model, task, q: str, budget_tokens: int, beam: int=5, max_depth: int=8,
+                 exploration_scorer: Optional[Callable]=None, return_tokens: bool=False,
+                 verifier: Optional[Callable]=None, early_stop: bool=False) -> Tuple[str,int,int]:
+    score = exploration_scorer or scorer_for(task)
+    frontier: List[Tuple[str,float]] = [("", 0.0)]
+    tokens_spent = 0
+    expansions = 0
+    for depth in range(max_depth):
+        candidates = []
+        prompts = [f"{cot_prompt(q)} {path}" for (path, _) in frontier]
+        outs, toks = model.generate(prompts, max_tokens=max(16, budget_tokens//(max_depth*beam)))
+        tokens_spent += int(sum(toks)); expansions += len(outs)
+        for o in outs:
+            v, vcost = score(model, task, o); tokens_spent += vcost
+            candidates.append((o.strip(), float(v)))
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        frontier = candidates[:beam]
+        if early_stop and verifier is not None:
+            if any(verifier(o[0]) >= 1.0 for o in frontier):
+                break
+        if tokens_spent >= budget_tokens: break
+    return (frontier[0][0], tokens_spent, expansions) if return_tokens else (frontier[0][0], tokens_spent, expansions)
+
+def mcts_pw_baseline(model, task, q: str, budget_tokens: int, rollouts: int=64, c_puct: float=1.0,
+                     alpha: float=0.5, c_pw: float=1.5, max_depth: int=8,
+                     exploration_scorer: Optional[Callable]=None, return_tokens: bool=False,
+                     verifier: Optional[Callable]=None, early_stop: bool=False) -> Tuple[str,int,int]:
+    score = exploration_scorer or scorer_for(task)
+    class Node:
+        __slots__=("text","parent","children","N","W","P")
+        def __init__(self, text="", parent=None, P=1.0):
+            self.text=text; self.parent=parent; self.children=[]; self.N=0; self.W=0.0; self.P=P
+    def ucb(par, ch):
+        Q = 0.0 if ch.N==0 else ch.W/ch.N
+        U = c_puct*ch.P*math.sqrt(max(1, par.N))/(1+ch.N)
+        return Q+U
+    root = Node("")
+    tokens_spent = 0
+    expansions = 0
+    for _ in range(rollouts):
+        node=root; depth=0
+        while True:
+            depth+=1
+            allow_k = 1 + int(c_pw * (node.N ** alpha))
+            if len(node.children) < allow_k:
+                out, toks = model.generate([cot_prompt(q) + (" " + node.text if node.text else "")], max_tokens=max(16, budget_tokens//(rollouts*2)), temperature=0.7)
+                tokens_spent += int(toks[0]); child = Node(out[0].strip(), parent=node, P=1.0/max(1,allow_k))
+                node.children.append(child); node = child; expansions += 1; break
+            node = max(node.children, key=lambda c: ucb(node, c))
+            if depth >= max_depth: break
+        v, vcost = score(model, task, node.text); tokens_spent += vcost
+        p=node
+        while p is not None:
+            p.N += 1; p.W += float(v); p=p.parent
+        if early_stop and verifier is not None and verifier(node.text) >= 1.0:
+            break
+        if tokens_spent >= budget_tokens: break
+    if not root.children: return ("", tokens_spent, expansions) if return_tokens else ("", tokens_spent, expansions)
+    best = max(root.children, key=lambda c: (0.0 if c.N==0 else c.W/c.N))
+    return (best.text, tokens_spent, expansions) if return_tokens else (best.text, tokens_spent, expansions)
+
+==> ./ltot/scorers/vlm.py <==
+from typing import Tuple
+import random, re
+
+# Robust 0..1 float parser (mirrors the consistency scorer’s behavior)
+_NUM = re.compile(r"(?<!\d)(?:0(?:\.\d+)?|1(?:\.0+)?|0?\.\d+)(?!\d)")
+
+_PROMPTS = [
+    ("You are a strict plausibility scorer. Rate the plausibility that the "
+     "DRAFT REASONING leads to a correct solution to the QUESTION. "
+     "Return only a single number in [0,1].\n---\nQUESTION:\n{question}\n"
+     "DRAFT REASONING:\n{text}\nScore:"),
+    ("Output a single calibrated confidence in [0,1] that the following "
+     "step sequence is on track to solve the problem.\n---\nProblem:\n{question}\n"
+     "Trace:\n{text}\nConfidence:"),
+    ("Judge whether the partial solution below is likely correct if continued, "
+     "using general world/math knowledge. Respond with only a number between 0 and 1.\n---\n"
+     "Q:\n{question}\nPartial solution:\n{text}\nPlausibility:")
+]
+
+def _parse_float_01(s: str) -> float:
+    m = _NUM.search(s)
+    if not m: return 0.5
+    try:
+        x = float(m.group(0))
+        return max(0.0, min(1.0, x))
+    except Exception:
+        return 0.5
+
+def vlm_score(model, question: str, text: str, temp_range=(0.0, 0.0)) -> Tuple[float, int]:
+    """
+    LM-scored plausibility used during exploration when no exact verifier is available.
+    Returns (score in [0,1], token_cost).
+    """
+    t = float(random.uniform(*temp_range)) if temp_range else 0.0
+    prompt = random.choice(_PROMPTS).format(question=str(question)[:3000], text=str(text)[:3000])
+    outs, toks = model.generate([prompt], max_tokens=8, temperature=t, top_p=0.95)
+    return _parse_float_01(outs[0]), int(toks[0])
+
+==> ./ltot/scorers/consistency.py <==
+from typing import Tuple
+import re
+
+_NUM = re.compile(r"(?<!\d)(?:0(?:\.\d+)?|1(?:\.0+)?|0?\.\d+)(?!\d)")
+
+_PROMPTS = [
+    "Rate [0..1] whether the NEW line logically follows from the PREVIOUS state. Return only the number.\n---\n[PREVIOUS]\n{prev}\n[NEW]\n{new}\nScore:",
+    "Output a single number in [0,1] for step consistency (entailment) of NEW from PREVIOUS.\n---\nPREVIOUS:\n{prev}\nNEW:\n{new}\nScore:",
+]
+
+def _parse_float_01(s: str) -> float:
+    m = _NUM.search(s)
+    if not m:
+        return 0.5
+    try:
+        x = float(m.group(0))
+        return max(0.0, min(1.0, x))
+    except Exception:
+        return 0.5
+
+def c_local_score(model, prev: str, new: str, temperature: float = 0.0) -> Tuple[float, int]:
+    """Lightweight LM step-consistency (c_local) in [0,1]. Returns (score, token_cost)."""
+    prompt = _PROMPTS[0].format(prev=prev[-2000:], new=new[:2000])
+    outs, toks = model.generate([prompt], max_tokens=8, temperature=temperature, top_p=0.95)
+    return _parse_float_01(outs[0]), int(toks[0])
+
+==> ./ltot/datasets.py <==
+from datasets import load_dataset
+import json, os, random
+from typing import Iterable, Dict, List, Tuple
+
+def _read_ids(path: str) -> List[str]:
+    with open(path, "r", encoding="utf-8") as f:
+        return [ln.strip() for ln in f if ln.strip()]
+
+def load_task(task: str, seed: int) -> Iterable[Dict]:
+    import yaml
+    with open("configs/experiments.yaml","r") as yf:
+        ycfg = yaml.safe_load(yf)
+    canon = ycfg.get("datasets",{}).get("canonical_lists",{})
+    strict = not bool(ycfg.get("datasets",{}).get("allow_fallback_heuristics", False))
+    random.seed(seed)
+
+    if task == "gsm_plus":
+        ds = load_dataset("qintongli/GSM-Plus", split="test")
+        for i, r in enumerate(ds):
+            yield {"qid": f"gsmplus-{i}", "question": r["question"], "answer": str(r["answer"])}
+
+    elif task == "gsm_hard":
+        base = load_dataset("openai/gsm8k", "main", split="test")
+        ids_path = canon.get("gsm_hard_ids")
+        if not ids_path or not os.path.exists(ids_path):
+            if strict:
+                raise FileNotFoundError("Missing canonical GSM-Hard ids; set allow_fallback_heuristics=true.")
+            hard = [r for r in base if len(r["question"])>130]
+            for i, r in enumerate(hard):
+                yield {"qid": f"gsmhard-{i}", "question": r["question"], "answer": r["answer"].split('####')[-1].strip()}
+        else:
+            keep = [int(x) for x in _read_ids(ids_path)]
+            for i in keep:
+                r = base[i]
+                yield {"qid": f"gsmhard-{i}", "question": r["question"], "answer": r["answer"].split('####')[-1].strip()}
+
+    elif task == "math_500":
+        ds = load_dataset("hendrycks/competition_math", split="test")
+        ids_path = canon.get("math500_ids")
+        if not ids_path or not os.path.exists(ids_path):
+            if strict: raise FileNotFoundError("Missing canonical math500_ids.txt")
+            idx = list(range(len(ds))); random.shuffle(idx); idx = idx[:500]
+        else:
+            idx = [int(x) for x in _read_ids(ids_path)]
+        for i in idx:
+            r = ds[i]
+            yield {"qid": f"math500-{i}", "question": r["problem"], "answer": r["solution"]}
+
+    elif task == "humaneval":
+        ds = load_dataset("openai_humaneval", split="test")
+        for r in ds:
+            yield {"qid": f"humaneval-{r['task_id']}", "prompt": r["prompt"], "tests": r["test"], "entry_point": r["entry_point"]}
+
+    elif task == "mbpp_lite":
+        ds = load_dataset("Muennighoff/mbpp", split="test")
+        ids_path = canon.get("mbpp_ids")
+        if not ids_path or not os.path.exists(ids_path):
+            if strict: raise FileNotFoundError("Missing canonical mbpp_lite_ids.txt")
+            ids = sorted({min(i, len(ds)-1) for i in range(0, len(ds), 10)})[:100]
+        else:
+            ids = [int(x) for x in _read_ids(ids_path)]
+        for i in ids:
+            r = ds[i]
+            yield {"qid": f"mbpp-{r['task_id']}", "prompt": r["text"], "code": r.get("code",""), "tests": r.get("test_list", [])}
+
+    elif task == "game24":
+        path = canon.get("game24")
+        if not path or not os.path.exists(path):
+            if strict: raise FileNotFoundError("Missing canonical game24_quads.txt")
+            quads = [(1,3,4,6),(2,2,6,6),(3,3,8,8),(5,5,5,1)]
+        else:
+            quads = [tuple(int(t) for t in ln.split()) for ln in _read_ids(path)]
+        for i, p in enumerate(quads):
+            yield {"qid": f"g24-{i}", "digits": p}
+    else:
+        raise ValueError(f"Unknown task {task}")
+
+==> ./scripts/arc_warmup.sbatch <==
+#!/bin/bash
+#SBATCH --job-name=ltot.warm
+#SBATCH --partition=short
+#SBATCH --time=00:20:00
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --output=logs/warm.%x-%A.out
+set -euo pipefail
+source $PWD/.venv/bin/activate
+python - <<'PY'
+from ltot.inference.backends import LocalLM, hf_model_id
+for m in ["llama-3.1-8b-instruct","mixtral-8x7b-instruct"]:
+    print("WARMUP:", m); LocalLM(hf_model_id(m))
+print("Done.")
+PY
+
+==> ./scripts/arc_entry.sh <==
+#!/usr/bin/env bash
+# Convenience wrapper identical to launch_arc.sh, kept under scripts/.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+cd "$HERE"
+bash launch_arc.sh "${1:-full}"
+
+==> ./scripts/arc_shard.sbatch <==
+#!/bin/bash
+#SBATCH --job-name=ltot.shard
+#SBATCH --partition=short
+#SBATCH --time=24:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=48G
+#SBATCH --gres=gpu:4
+#SBATCH --output=logs/arr.%x-%A_%a.out
+#SBATCH --error=logs/arr.%x-%A_%a.err
+set -euo pipefail
+source $PWD/.venv/bin/activate
+export LTOT_SHARD=${SLURM_ARRAY_TASK_ID}
+echo "[INFO] Running Snakemake for LTOT_SHARD=$LTOT_SHARD"
+snakemake --snakefile Snakefile --rerun-incomplete --cores 1 --notemp
+
+==> ./scripts/arc_aggregate.sbatch <==
+#!/bin/bash
+#SBATCH --job-name=ltot.aggr
+#SBATCH --partition=short
+#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=8G
+#SBATCH --output=logs/aggr.%x-%A.out
+set -euo pipefail
+source $PWD/.venv/bin/activate
+python -m ltot.run aggregate \
+  --inputs         results/raw \
+  --inputs_width   results/raw_width \
+  --inputs_ablate  results/raw_ablate \
+  --inputs_latency results/raw_latency \
+  --artifact       results/ltot_artifact.jsonl \
+  --fig            figures/main_equal_compute.svg
+echo "[INFO] Wrote results/ltot_artifact.jsonl and figures/main_equal_compute.svg"
+
+==> ./scripts/diag_local.py <==
+#!/usr/bin/env python3
+"""
+scripts/diag_local.py
+
+Tiny, ARC‑free diagnostic that exercises CoT / ToT / MCTS‑PW / LToT end‑to‑end,
+and emits the SAME record shapes your paper uses so you can trial
+"forecast → empirical" replacement on a miniature artifact.
+
+Defaults are CPU‑safe (tiny model, small budgets). Override via env vars:
+
+  LTOT_DIAG_MODEL  = sshleifer/tiny-gpt2        # any HF causal LM id
+  LTOT_DIAG_BUDGET = 96                         # per‑item token budget
+  LTOT_DIAG_SEED   = 1
+  LTOT_DIAG_TASKS  = gsm_plus,humaneval         # tasks w/o canonical lists
+  LTOT_DIAG_ITEMS  = 2                          # items per task
+  LTOT_DTYPE       = float32                    # dtype for LocalLM (CPU‑safe)
+"""
+
+from __future__ import annotations
+import os, sys, json, random
+from pathlib import Path
+from typing import List
+
+# --- Make the package import robust whether run with -m or as a script ---
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+import yaml  # type: ignore
+
+from ltot.inference.backends import LocalLM, hf_model_id
+from ltot.datasets import load_task
+from ltot.search.baselines import tot_baseline, mcts_pw_baseline
+from ltot.search.ltot_controller import LToTController
+from ltot.config import LToTParams
+from ltot.run import build_prompt, verifier_for, scorer_for_exploration
+from ltot.util.artifact_jsonl import ArtifactWriter
+
+
+def _env(key: str, default: str) -> str:
+    v = os.environ.get(key)
+    return v if v is not None and str(v).strip() != "" else default
+
+
+def main() -> None:
+    # --- Tiny, CPU‑friendly defaults; all overridable via env ---
+    model_id  = _env("LTOT_DIAG_MODEL",  "sshleifer/tiny-gpt2")
+    budget    = int(_env("LTOT_DIAG_BUDGET", "96"))
+    seed      = int(_env("LTOT_DIAG_SEED",   "1"))
+    tasks     = [t.strip() for t in _env("LTOT_DIAG_TASKS", "gsm_plus,humaneval").split(",") if t.strip()]
+    max_items = int(_env("LTOT_DIAG_ITEMS",  "2"))
+    dtype     = _env("LTOT_DTYPE",           "float32")   # robust on CPU
+
+    random.seed(seed)
+    Path("results/raw").mkdir(parents=True, exist_ok=True)
+
+    # --- Load paper config (bars/plateau/lambdas/mainline params come from here) ---
+    with open("configs/experiments.yaml", "r", encoding="utf-8") as yf:
+        ycfg = yaml.safe_load(yf) or {}
+
+    plateau_cfg = ycfg.get("plateau", {}) or {}
+    # Bars need kappa/delta from controllers.ltot (paper parameters)
+    bars_cfg = {
+        **(ycfg.get("bars", {}) or {}),
+        "kappa": ycfg.get("controllers", {}).get("ltot", {}).get("kappa", 1.0),
+        "delta": ycfg.get("controllers", {}).get("ltot", {}).get("delta", 0.02),
+    }
+    lambdas = (
+        ycfg.get("consistency", {}).get("lambdas", {"logic": 0.7, "syntax": 0.2, "constraints": 0.1})
+        or {"logic": 0.7, "syntax": 0.2, "constraints": 0.1}
+    )
+    mainline_cfg = dict(ycfg.get("controllers", {}).get("ltot", {}) or {})
+    # Wire envelope & dual‑gate like the main runner does
+    mainline_cfg["envelope_cfg"]  = ycfg.get("envelope", None)
+    mainline_cfg["dual_gate_cfg"] = ycfg.get("consistency", {}).get("qa_dual_gate", {"enabled": False})
+
+    # Keep it small so a tiny model can run on CPU in seconds
+    n0_default = int(mainline_cfg.get("initial_lateral_width", 128))
+    mainline_cfg["initial_lateral_width"] = min(n0_default, 16)
+
+    # --- Build a tiny local model (dtype float32 by default for CPU‑only boxes) ---
+    llm = LocalLM(hf_model_id(model_id), dtype=dtype)
+
+    # Single artifact sink for this diagnostic's raw events; aggregator will ingest it
+    aw = ArtifactWriter("results/raw/diag_local.jsonl")
+
+    def _log_cb_factory(task: str, qid: str):
+        """Return a callback that attaches context to LR‑SC/LToT diagnostics."""
+        def _log_cb(rec: dict) -> None:
+            payload = dict(rec)
+            payload.update({
+                "task": task, "qid": qid, "model": model_id,
+                "method": "LToT", "budget": budget, "seed": seed
+            })
+            aw.write(payload)
+        return _log_cb
+
+    # Optional noisy‑v settings (disabled by default here)
+    noisy_cfg = ycfg.get("noisy_v_study", {"enabled": False, "temp_low": 0.0, "temp_high": 0.0}) or {}
+
+    # --- Iterate tasks (only those that don't require canonical lists by default) ---
+    for task in tasks:
+        # Collect a few items; skip tasks that are fail‑closed in this repo
+        items: List[dict] = []
+        try:
+            for it in load_task(task, seed):
+                items.append(it)
+                if len(items) >= max_items:
+                    break
+        except Exception as e:
+            print(f"[diag] SKIP task={task}: {e}")
+            continue
+
+        for item in items:
+            qid = item.get("qid", "unknown")
+            q   = item.get("question") or item.get("prompt") or str(item.get("digits"))
+            V   = verifier_for(task, item)
+
+            # Exploration scorer matches paper logic (unit‑test subsets for code; vLM otherwise)
+            score_expl = scorer_for_exploration(
+                task,
+                noisy_cfg if (noisy_cfg.get("enabled", False)) else {"temp_low": 0.0, "temp_high": 0.0},
+                item
+            )
+
+            # ------------------------- CoT -------------------------
+            texts, toks = llm.generate([build_prompt(task, item)(q)], max_tokens=max(8, budget // 2))
+            out = texts[0]; tok = int(toks[0])
+            aw.write({
+                "kind": "run", "task": task, "qid": qid, "model": model_id, "method": "CoT",
+                "budget": budget, "seed": seed, "pred": out, "score": float(V(out)),
+                "tokens": tok, "expansions": 1, "wall_s": 0.0
+            })
+
+            # ------------------------- ToT -------------------------
+            out, tok, exps = tot_baseline(
+                llm, task, q, budget_tokens=budget, beam=3,
+                exploration_scorer=score_expl, return_tokens=True, verifier=V, early_stop=True
+            )
+            aw.write({
+                "kind": "run", "task": task, "qid": qid, "model": model_id, "method": "ToT",
+                "budget": budget, "seed": seed, "pred": out, "score": float(V(out)),
+                "tokens": int(tok), "expansions": int(exps), "wall_s": 0.0
+            })
+
+            # ---------------------- MCTS‑PW -----------------------
+            out, tok, exps = mcts_pw_baseline(
+                llm, task, q, budget_tokens=budget, rollouts=16,
+                exploration_scorer=score_expl, return_tokens=True, verifier=V, early_stop=True
+            )
+            aw.write({
+                "kind": "run", "task": task, "qid": qid, "model": model_id, "method": "MCTS-PW",
+                "budget": budget, "seed": seed, "pred": out, "score": float(V(out)),
+                "tokens": int(tok), "expansions": int(exps), "wall_s": 0.0
+            })
+
+            # ------------------------- LToT ------------------------
+            ctrl = LToTController(
+                llm, LToTParams(), V,
+                plateau_cfg=plateau_cfg, bars_cfg=bars_cfg,
+                lambdas=lambdas, mainline_cfg=mainline_cfg, early_stop=True
+            )
+
+            # Pass a callback that writes *every* LR‑SC/LToT diagnostic event as its own JSONL row
+            _log_cb = _log_cb_factory(task, qid)
+
+            text, tok, rung_costs_all, _, exps = ctrl.run(
+                build_prompt(task, item), q, budget, task,
+                scorer=score_expl, rng=random.Random(seed),
+                return_logs=True, log_callback=_log_cb
+            )
+
+            # Emit rung_costs explicitly so the aggregator can compute rung CV / counts
+            aw.write({
+                "kind": "rung_costs", "task": task, "qid": qid, "model": model_id, "method": "LToT",
+                "budget": budget, "seed": seed,
+                "rung_costs": [int(x) for x in (rung_costs_all or [])]
+            })
+
+            # LToT run row with N0 so cost‑law fit logic can operate (even on tiny runs)
+            aw.write({
+                "kind": "run", "task": task, "qid": qid, "model": model_id, "method": "LToT",
+                "budget": budget, "seed": seed, "pred": text, "score": float(V(text)),
+                "tokens": int(tok), "expansions": int(exps), "wall_s": 0.0,
+                "N0": int(mainline_cfg.get("initial_lateral_width", 16))
+            })
+
+    aw.close()
+    print("[diag] wrote results/raw/diag_local.jsonl")
+    print("[diag] You can now aggregate to build results/ltot_artifact.jsonl and figures/main_equal_compute.svg:")
+    print("       python -m ltot.run aggregate \\")
+    print("         --inputs results/raw --inputs_width results/raw_width \\")
+    print("         --inputs_ablate results/raw_ablate --inputs_latency results/raw_latency \\")
+    print("         --artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg")
+
+
+if __name__ == "__main__":
+    main()
+
+==> ./README.md <==
+# Lateral Tree-of-Thoughts (LToT) — Exact Paper Replica
+
+This repo reproduces the full experiment suite from the LToT manuscript:
+- Equal-compute (±2%) parity across CoT / ToT / MCTS-PW / LToT
+- Predictive continuation (slope+curvature) with width-aware bars + repeat-to-confirm
+- Plateau trigger for exploitation phases
+- Width-scaling sweeps (N0 ∈ {32,64,128,256,512,1024})
+- Five ablations: overflow_off, no_curvature, no_width_bar, no_short_circuit, no_plateau, plus no_confirm
+- Noisy-v study (LM-scored exploration) with selectivity / false-promotion logging
+- Robustness toggles (heavy-tail & correlation noise) for Sec. 5.3
+- Early-stop latency logging (separate pass)
+- Cost-law logging (per-rung costs/expansions) for N log N fit & rung CV
+- Positioning diagnostics (SH-only lateralization; SH-on-mainlines)
+- Canonical dataset lists; fail-closed unless overridden
+
+Outputs a single artifact (`results/ltot_artifact.jsonl`) that includes all tables/metrics and a main SVG figure.
+
+---
+
+## Quick start (Local diagnostic)
+
+A tiny, CPU-friendly diagnostic that exercises CoT/ToT/MCTS-PW/LToT end-to-end, no ARC needed:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip && pip install -r requirements.txt
+export HF_HOME="$PWD/.cache/huggingface"; export TRANSFORMERS_CACHE="$HF_HOME/transformers"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"; mkdir -p "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE"
+python scripts/diag_local.py
+python -m ltot.run aggregate \
+  --inputs results/raw --inputs_width results/raw_width --inputs_ablate results/raw_ablate --inputs_latency results/raw_latency \
+  --artifact results/ltot_artifact.jsonl --fig figures/main_equal_compute.svg
+
+==> ./requirements.txt <==
+transformers>=4.43
+accelerate>=0.33
+torch>=2.2
+datasets>=2.19
+pyyaml>=6.0
+pandas>=2.2
+numpy>=1.26
+scipy>=1.13
+matplotlib>=3.8
+requests==2.32.4
+snakemake>=7.32
+
+==> ./results/raw/diag_local.jsonl <==
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-0", "model": "sshleifer/tiny-gpt2", "method": "CoT", "budget": 96, "seed": 1, "pred": "ting dispatchpress vendorsiken reviewing conservation stairs004 intermittent Money Habit scalp Money TAting Moneyiken Observpress004 directlyoho confir dispatch reviewing stairsting004 confirdit Money Money dispatchJDRocketiken credibilityRocket heir reviewing Money TAreement ParticipationRocket confir Observ", "score": 0.0, "tokens": 53, "expansions": 1, "wall_s": 0.0}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-0", "model": "sshleifer/tiny-gpt2", "method": "ToT", "budget": 96, "seed": 1, "pred": "dispatch Habitdit reviewingpress pawnhibit subst dispatch Jrimurareement scalpatisf ObservSher", "score": 0.0, "tokens": 101, "expansions": 4, "wall_s": 0.0}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-0", "model": "sshleifer/tiny-gpt2", "method": "MCTS-PW", "budget": 96, "seed": 1, "pred": "lined soy brutalityGyPros DreamsMini Boone factors 236GyOutside clearerpublic equateived", "score": 0.0, "tokens": 100, "expansions": 4, "wall_s": 0.0}
+{"kind": "rung_expansions", "rung_expansions": [], "task": "gsm_plus", "qid": "gsmplus-0", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1}
+{"kind": "rung_costs", "task": "gsm_plus", "qid": "gsmplus-0", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "rung_costs": []}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-0", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "pred": "Sher ONE Observ antibiotic subst subst ONE TAdit conservationoho vendors HabitRocketreement Participation ESV ONE heir dispatch scalp Jr trilogy stairs Habit vendorsiken Prob ESV Money Observ Participation\nreviewing directly Danielatisf Daniel pawn dispatch dispatch circumcised004 antibiotic Jrpress scalpmediately vendors credibility intermittent credibility ESVpress ESV antibiotic hauled", "score": 0.0, "tokens": 605, "expansions": 18, "wall_s": 0.0, "N0": 16}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-1", "model": "sshleifer/tiny-gpt2", "method": "CoT", "budget": 96, "seed": 1, "pred": "grandchildren soy predators membership courtyard mutual lined Tre448 representations TelevisionMini Television boilspublicaciousGy SingaporeMostacious incarcer Televisionshows ReduxpublicMostOutside clearer workshops Singapore BendGy perhaps predators workshops brutalityPros LateMini clearer Pocket incarcerpublic incarcer 236ived membership grandchildren", "score": 0.0, "tokens": 52, "expansions": 1, "wall_s": 0.0}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-1", "model": "sshleifer/tiny-gpt2", "method": "ToT", "budget": 96, "seed": 1, "pred": "incarcerobl448 mutual linedOutside courtyard representations clearer boils bravery grandchildren representationsGy clearerpublic", "score": 0.0, "tokens": 99, "expansions": 4, "wall_s": 0.0}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-1", "model": "sshleifer/tiny-gpt2", "method": "MCTS-PW", "budget": 96, "seed": 1, "pred": "Brew substiken autonomyatisf Probting heir Brew directly dispatchting reviewing Observ intermittent confir", "score": 0.0, "tokens": 101, "expansions": 4, "wall_s": 0.0}
+{"kind": "rung_expansions", "rung_expansions": [], "task": "gsm_plus", "qid": "gsmplus-1", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1}
+{"kind": "rung_costs", "task": "gsm_plus", "qid": "gsmplus-1", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "rung_costs": []}
+{"kind": "run", "task": "gsm_plus", "qid": "gsmplus-1", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "pred": "ived Dreamsshowsacious lined Dreams membership Singapore Television Boone skillet linedacious448 clearer bravery brutalityGypublic Medic Bend lined courtyard predatorsozyg� TelevisionMini grandchildren 236 representationsshows\nstairs ESV pawn TAhibitimura Participation autonomy004 autonomy intermittent credibility credibility antibiotic confirhibit Motorolareement TA intermittent004 ONE heir subst", "score": 0.0, "tokens": 609, "expansions": 18, "wall_s": 0.0, "N0": 16}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/0", "model": "sshleifer/tiny-gpt2", "method": "CoT", "budget": 96, "seed": 1, "pred": "deflect bravery Redux boilsGyGyPros lined brutality Bend rubbing praying rubbing Lateozyg Late boils Televisionozyg clearer 236 rubbing Boone Medic lined rubbing653shows rubbing praying lined representationsPros WheelsOutside Pocket incarcer workshops MedicpublicOutsideozygGy brutality deflect� brutality soy", "score": 0.0, "tokens": 48, "expansions": 1, "wall_s": 0.0}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/0", "model": "sshleifer/tiny-gpt2", "method": "ToT", "budget": 96, "seed": 1, "pred": "Late boils448 brutalityPros Bend deflectshowsshowsshows653 Dreams� Treozyg workshops", "score": 0.0, "tokens": 101, "expansions": 6, "wall_s": 0.0}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/0", "model": "sshleifer/tiny-gpt2", "method": "MCTS-PW", "budget": 96, "seed": 1, "pred": "ONE ObservRocket Money004press circumciseddit Daniel scalp ESV credibilityScene vendors HabitRocket", "score": 0.0, "tokens": 98, "expansions": 6, "wall_s": 0.0}
+{"kind": "rung_expansions", "rung_expansions": [], "task": "humaneval", "qid": "humaneval-HumanEval/0", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1}
+{"kind": "rung_costs", "task": "humaneval", "qid": "humaneval-HumanEval/0", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "rung_costs": []}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/0", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "pred": "grandchildren653 equateacious Tre factorsPros rubbing skillet rubbing representations MedicGyobl factors 236 Bend factors Tre lined Dreams448 membershippublicSexual653Most mutual boils workshopsMost workshops\nMiniMini predators448 Late rubbing653 mutualProsshows membership boils linedpublic predators Singapore Wheels lined� Medic Medic courtyardSexualived", "score": 0.0, "tokens": 587, "expansions": 18, "wall_s": 0.0, "N0": 16}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/1", "model": "sshleifer/tiny-gpt2", "method": "CoT", "budget": 96, "seed": 1, "pred": "antibioticoother Prob HancockRocketoho pawn Hancock ONE antibiotic Motorolaikenmediately credibility credibilitydit Daniel Participation TA substatisfJD ESV pawntingditmediatelyimura directly ParticipationShermediately reviewing Daniel scalp Jr Prob scalp trilogy ESV subst dispatchdit hauledmediately directly Habit heir", "score": 0.0, "tokens": 51, "expansions": 1, "wall_s": 0.0}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/1", "model": "sshleifer/tiny-gpt2", "method": "ToT", "budget": 96, "seed": 1, "pred": "ozyg boils lined membership brutality equateMini Medic Late DreamsSexualMost equate clearer braveryMini", "score": 0.0, "tokens": 100, "expansions": 6, "wall_s": 0.0}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/1", "model": "sshleifer/tiny-gpt2", "method": "MCTS-PW", "budget": 96, "seed": 1, "pred": "scalp Rh hauled circumcisedatisf subst Jratisf Brew Money circumcised directly Rh Jr pawn004", "score": 0.0, "tokens": 101, "expansions": 6, "wall_s": 0.0}
+{"kind": "rung_expansions", "rung_expansions": [], "task": "humaneval", "qid": "humaneval-HumanEval/1", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1}
+{"kind": "rung_costs", "task": "humaneval", "qid": "humaneval-HumanEval/1", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "rung_costs": []}
+{"kind": "run", "task": "humaneval", "qid": "humaneval-HumanEval/1", "model": "sshleifer/tiny-gpt2", "method": "LToT", "budget": 96, "seed": 1, "pred": "JD trilogy subst directlyatisfatisfRocket JrRocket HancockootherScene directly antibiotic vendors stairsreement MoneyJD Rh directly Hancock confir antibiotic hauled reviewing hauled antibiotic ONE hauled ESV subst\nting credibilityikenScene trilogy Rh Participationikenatisf Motorola trilogypress stairs antibiotic Hancock hauledRocketiken antibiotic hauled004 Brew stairs vendors", "score": 0.0, "tokens": 601, "expansions": 18, "wall_s": 0.0, "N0": 16}
+
+==> ./md_write_files.py <==
+#!/usr/bin/env python3
+"""
+md_write_files.py
+
+Parse a repository dump in Markdown (with sections like `### `path/to/file`` followed
+by a fenced code block) and write each file to disk.
+
+- Detects headings with backticked file paths:  ^#+ .*`path`.*
+- Associates the *next* fenced code block (```...``` or ````...````) as that file's content.
+- Creates parent directories as needed.
+- Skips directories (headings whose backticked text ends with '/').
+- Makes *.sh and *.sbatch files executable, and any file whose content starts with a shebang (#!).
+- Skips overwriting existing files unless --overwrite is passed.
+
+Examples:
+  python3 md_write_files.py --root ./repo < repo_markdown.txt
+  pbpaste | python3 md_write_files.py --root ./repo --overwrite
+"""
+import argparse
+import os
+import re
+import stat
+import sys
+from typing import List, Tuple
+
+HEADING_RE = re.compile(r'^\s{0,3}#{2,6}\s+(.*)$')          # ## ... to ###### ...
+BACKTICK_PATH_RE = re.compile(r'`([^`]+?)`')                # grab `path` inside heading
+FENCE_OPEN_RE = re.compile(r'^([`~]{3,})(.*)$')             # ```lang or ~~~lang or ````markdown
+
+EXEC_SUFFIXES = ('.sh', '.sbatch')
+
+def find_files_from_markdown(lines: List[str]) -> List[Tuple[str, str]]:
+    """
+    Scan lines, look for heading with backticked path; the next fenced block is the file content.
+    Returns list of (path, content).
+    """
+    i = 0
+    pairs: List[Tuple[str, str]] = []
+    n = len(lines)
+
+    while i < n:
+        m_head = HEADING_RE.match(lines[i])
+        if not m_head:
+            i += 1
+            continue
+
+        heading_text = m_head.group(1)
+        m_path = BACKTICK_PATH_RE.search(heading_text)
+        if not m_path:
+            i += 1
+            continue
+
+        path = m_path.group(1).strip()
+        # Skip headings that denote a directory or a package section (ending with '/')
+        if path.endswith('/'):
+            i += 1
+            continue
+
+        # Look ahead for next fenced code block
+        j = i + 1
+        fence = None
+        # Scan until we hit a code fence or another heading
+        while j < n:
+            line = lines[j]
+            m_next_head = HEADING_RE.match(line)
+            if m_next_head:
+                # Another heading before any code fence => no content block for this path
+                break
+
+            m_fence = FENCE_OPEN_RE.match(line.strip())
+            if m_fence:
+                fence = m_fence.group(1)  # exact fence string (``` or ```` or ~~~)
+                j += 1
+                content_lines: List[str] = []
+                # Collect until matching closing fence (allow leading spaces before fence)
+                while j < n:
+                    closer = lines[j].strip()
+                    if closer.startswith(fence):
+                        j += 1  # consume closing fence
+                        break
+                    content_lines.append(lines[j])
+                    j += 1
+                content = "\n".join(content_lines)
+                # Ensure trailing newline (common for source files)
+                if not content.endswith("\n"):
+                    content += "\n"
+                pairs.append((path, content))
+                i = j - 1  # position just after the block; -1 because i will ++ at loop end
+                break
+
+            j += 1
+
+        i += 1
+
+    return pairs
+
+def safe_join(root: str, relpath: str) -> str:
+    # Normalize and prevent escaping outside root
+    dest = os.path.normpath(os.path.join(root, relpath))
+    root_abs = os.path.abspath(root)
+    dest_abs = os.path.abspath(dest)
+    if not (dest_abs == root_abs or dest_abs.startswith(root_abs + os.sep)):
+        raise ValueError(f"Refusing to write outside root: {relpath}")
+    return dest_abs
+
+def ensure_mode(dest: str, content: str, set_exec: bool):
+    """
+    Set executable bit if:
+      - file has a shebang (#!) as first two chars, or
+      - file extension is in EXEC_SUFFIXES,
+    and set_exec is True (default behavior).
+    """
+    if not set_exec:
+        return
+    base = os.path.basename(dest)
+    is_exec_suffix = any(base.endswith(sfx) for sfx in EXEC_SUFFIXES)
+    has_shebang = content.startswith("#!")
+    if is_exec_suffix or has_shebang:
+        try:
+            st = os.stat(dest)
+            os.chmod(dest, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except Exception as e:
+            print(f"[WARN] Could not set executable bit on {dest}: {e}", file=sys.stderr)
+
+def main():
+    ap = argparse.ArgumentParser(description="Write files from Markdown repository dump.")
+    ap.add_argument(
+        "--root", "-r", default=".",
+        help="Output root directory (created if missing). Default: current directory."
+    )
+    ap.add_argument(
+        "--overwrite", action="store_true",
+        help="Overwrite existing files instead of skipping."
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="Do not write files; just print what would be created."
+    )
+    ap.add_argument(
+        "--no-exec", action="store_true",
+        help="Do not set execute bit on scripts, even if they look executable."
+    )
+    args = ap.parse_args()
+
+    text = sys.stdin.read()
+    if not text.strip():
+        print("[ERROR] No input read from stdin. Pipe or redirect the Markdown into this script.", file=sys.stderr)
+        sys.exit(2)
+
+    lines = text.splitlines()
+    pairs = find_files_from_markdown(lines)
+
+    if not pairs:
+        print("[ERROR] No files detected in the Markdown. Make sure headings look like:  ### `path/to/file`", file=sys.stderr)
+        sys.exit(1)
+
+    # Create root if needed
+    os.makedirs(args.root, exist_ok=True)
+
+    created, skipped, overwritten = 0, 0, 0
+    for relpath, content in pairs:
+        try:
+            dest = safe_join(args.root, relpath)
+        except ValueError as e:
+            print(f"[SKIP] {relpath}: {e}", file=sys.stderr)
+            skipped += 1
+            continue
+
+        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+
+        if os.path.exists(dest) and not args.overwrite:
+            print(f"[SKIP] {relpath} (exists; use --overwrite to replace)")
+            skipped += 1
+            continue
+
+        action = "OVERWRITE" if os.path.exists(dest) else "CREATE"
+        if args.dry_run:
+            print(f"[DRY] {action} {relpath}  ({len(content)} bytes)")
+            continue
+
+        with open(dest, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+
+        ensure_mode(dest, content, set_exec=not args.no_exec)
+
+        if action == "CREATE":
+            created += 1
+        else:
+            overwritten += 1
+        print(f"[OK] {action} {relpath}")
+
+    if args.dry_run:
+        print(f"\n[DRY SUMMARY] would create: {sum(1 for p,_ in pairs)} files")
+    else:
+        print(f"\n[SUMMARY] created: {created}, overwritten: {overwritten}, skipped: {skipped}")
+
+if __name__ == "__main__":
+    main()
+
+==> ./launch_arc.sh <==
+#!/usr/bin/env bash
+# ARC entry: warm cache (optional), submit 100-shard array, then aggregate.
+set -euo pipefail
+mode="${1:-full}"
+
+# Common env (recommended for persistent caches)
+export HF_HOME="${HF_HOME:-${DATA:-$HOME}/.cache/huggingface}"
+export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
+export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
+
+if [[ "$mode" == "full" ]]; then
+  sbatch scripts/arc_warmup.sbatch || true
+  jid=$(sbatch --array=0-99 scripts/arc_shard.sbatch | awk '{print $4}')
+  sbatch --dependency=afterok:$jid scripts/arc_aggregate.sbatch
+elif [[ "$mode" == "core" ]]; then
+  # Core-first: focus on key tasks/models; remove these envs to run the rest later
+  export LTOT_TASKS="gsm_hard,math_500,humaneval,mbpp_lite,game24"
+  export LTOT_MODELS="llama-3.1-8b-instruct,mixtral-8x7b-instruct"
+  export LTOT_SEEDS="1,2,3"
+  sbatch scripts/arc_warmup.sbatch || true
+  jid=$(sbatch --array=0-99 scripts/arc_shard.sbatch | awk '{print $4}')
+  sbatch --dependency=afterok:$jid scripts/arc_aggregate.sbatch
+else
+  echo "Usage: bash launch_arc.sh [full|core]"
+  exit 1
+fi
+
+==> ./vast_ltot_launcher.sh <==
+#!/usr/bin/env bash
+# Vast.ai launcher for LToT: 6× 70B (4×A100 each) + 4× 8B (1×A100) + 4× Mixtral (2×A100)
+# Produces endpoints.env to drive your runner with LTOT_BACKEND=openai
+set -euo pipefail
+
+### --- 0) EDIT THESE KNOBS ----------------------------------------------------
+HF_TOKEN="hf_xxx"             # (optional) Hugging Face token if model is gated
+# Bid caps PER INSTANCE HOUR (interruptible). Adjust to taste:
+BID_4GPU="2.80"               # ~= $0.70/GPU-h × 4
+BID_2GPU="1.40"               # ~= $0.70/GPU-h × 2
+BID_1GPU="0.70"               # ~= $0.70/GPU-h × 1
+
+# Models (change if you use different IDs)
+MODEL_70B="meta-llama/Meta-Llama-3.1-70B-Instruct"
+MODEL_8B="meta-llama/Meta-Llama-3.1-8B-Instruct"
+MODEL_MIX="mistralai/Mixtral-8x7B-Instruct-v0.1"
+
+# Paste OFFER IDs you want to rent (from: vastai search offers 'gpu_name=A100 ...')
+# Prefer "Secure Cloud" / high reliability hosts near Ashburn/NYC.
+OFFERS_4GPU=(1111111 2222222 3333333 4444444 5555555 6666666)          # 6 hosts, each ≥4×A100
+OFFERS_1GPU=(7777777 8888888 9999999 1010101)                           # 4 hosts, 1×A100
+OFFERS_2GPU=(1212121 1313131 1414141 1515151)                           # 4 hosts, ≥2×A100
+
+# Docker image tag for vLLM's OpenAI-compatible server
+VLLM_IMG="vllm/vllm-openai:v0.9.2"
+# Disk to attach (GB) — enough to cache weights
+DISK_4GPU=220
+DISK_2GPU=160
+DISK_1GPU=120
+
+### --- 1) Sanity --------------------------------------------------------------
+command -v vastai >/dev/null || { echo "Install Vast CLI: pip install -U vastai"; exit 1; }
+echo "[i] Using bids: 4GPU=\$${BID_4GPU}/h, 2GPU=\$${BID_2GPU}/h, 1GPU=\$${BID_1GPU}/h"
+
+DATE_TAG=$(date +%y%m%d-%H%M%S)
+IDS_FILE="vast_instance_ids.${DATE_TAG}.txt"
+EP_FILE="endpoints.env"
+
+touch "$IDS_FILE"
+: > "$EP_FILE"
+
+### --- 2) Launch 70B servers (6× 4-GPU) --------------------------------------
+i=0
+for OFFER in "${OFFERS_4GPU[@]}"; do
+  i=$((i+1))
+  LABEL="ltot-70b-${i}-${DATE_TAG}"
+  echo "[+] Launching 70B replica $i on offer $OFFER (label=$LABEL)"
+  vastai create instance "$OFFER" \
+    --image "$VLLM_IMG" \
+    --disk "$DISK_4GPU" \
+    --label "$LABEL" \
+    --price "$BID_4GPU" \
+    --runtype args \
+    --env "HUGGING_FACE_HUB_TOKEN=$HF_TOKEN" \
+    --args "--model ${MODEL_70B} --tensor-parallel-size 4 --port 8000 --gpu-memory-utilization 0.90 --enable-chunked-prefill --max-num-seqs 1024" \
+    | tee -a "$IDS_FILE"
+done
+
+### --- 3) Launch 8B servers (4× 1-GPU) ---------------------------------------
+i=0
+for OFFER in "${OFFERS_1GPU[@]}"; do
+  i=$((i+1))
+  LABEL="ltot-8b-${i}-${DATE_TAG}"
+  echo "[+] Launching 8B server $i on offer $OFFER (label=$LABEL)"
+  vastai create instance "$OFFER" \
+    --image "$VLLM_IMG" \
+    --disk "$DISK_1GPU" \
+    --label "$LABEL" \
+    --price "$BID_1GPU" \
+    --runtype args \
+    --env "HUGGING_FACE_HUB_TOKEN=$HF_TOKEN" \
+    --args "--model ${MODEL_8B} --port 8000 --gpu-memory-utilization 0.90 --enable-chunked-prefill --max-num-seqs 1024" \
+    | tee -a "$IDS_FILE"
+done
+
+### --- 4) Launch Mixtral servers (4× 2-GPU, TP=2) ----------------------------
+i=0
+for OFFER in "${OFFERS_2GPU[@]}"; do
+  i=$((i+1))
+  LABEL="ltot-mix-${i}-${DATE_TAG}"
+  echo "[+] Launching Mixtral server $i on offer $OFFER (label=$LABEL)"
+  vastai create instance "$OFFER" \
+    --image "$VLLM_IMG" \
+    --disk "$DISK_2GPU" \
+    --label "$LABEL" \
+    --price "$BID_2GPU" \
+    --runtype args \
+    --env "HUGGING_FACE_HUB_TOKEN=$HF_TOKEN" \
+    --args "--model ${MODEL_MIX} --tensor-parallel-size 2 --port 8000 --gpu-memory-utilization 0.90 --enable-chunked-prefill --max-num-seqs 1024" \
+    | tee -a "$IDS_FILE"
+done
+
+### --- 5) Collect IPs and build endpoints.env --------------------------------
+echo "[i] Waiting 20s for instances to come up..."
+sleep 20
+
+# Helper: append all IPs for labels matching a regex to EP_FILE
+append_ips () {
+  local regex="$1" name="$2"
+  # list instances → grep label → pick 'ssh_host' column safely via --raw json if available
+  # Fallback: parse table output (column order may vary across CLI versions).
+  echo "[i] Discovering ${name} endpoints..."
+  # Prefer JSON if supported:
+  if vastai list instances --raw json >/dev/null 2>&1; then
+    vastai list instances --raw json | python3 - "$regex" "$name" "$EP_FILE" <<'PY'
+import json, os, re, sys
+rgx, name, outf = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.load(sys.stdin)
+ips = []
+for inst in data:
+    lbl = inst.get("label","")
+    if re.search(rgx, lbl):
+        ip = inst.get("public_ipaddr") or inst.get("ssh_host") or inst.get("ipaddr")
+        port = 8000
+        if ip: ips.append(f"http://{ip}:{port}/v1")
+with open(outf,"a") as f:
+    if ips:
+        arr = " ".join(ips)
+        f.write(f'export {name}=( {arr} )\n')
+        print(f"[OK] {name}: {len(ips)} endpoints")
+    else:
+        print(f"[WARN] no endpoints for {name}")
+PY
+  else
+    # Table fallback (best-effort): label + ip are usually present
+    # Users can tweak if their CLI format differs.
+    mapfile -t lines < <(vastai list instances | grep -E "$regex" || true)
+    ips=()
+    for L in "${lines[@]}"; do
+      ip=$(echo "$L" | awk '{for(i=1;i<=NF;i++){if($i ~ /([0-9]{1,3}\.){3}[0-9]{1,3}/){print $i; break}}}')
+      [[ -n "${ip:-}" ]] && ips+=("http://${ip}:8000/v1")
+    done
+    if [[ ${#ips[@]} -gt 0 ]]; then
+      echo "export ${name}=( ${ips[*]} )" >> "$EP_FILE"
+      echo "[OK] ${name}: ${#ips[@]} endpoints"
+    else
+      echo "[WARN] no endpoints for $name"
+    fi
+  fi
+}
+
+append_ips "ltot-70b-.*-${DATE_TAG}"   "ENDPOINTS_70B"
+append_ips "ltot-8b-.*-${DATE_TAG}"    "ENDPOINTS_8B"
+append_ips "ltot-mix-.*-${DATE_TAG}"   "ENDPOINTS_MIX"
+
+cat >> "$EP_FILE" <<'ENV'
+# --- Runner toggles ---
+export LTOT_BACKEND=openai         # or: local
+export OPENAI_API_KEY=dummy        # vLLM usually ignores this
+# Example: select a single endpoint (one process → one server)
+# export OPENAI_API_BASE=${ENDPOINTS_70B[0]}
+ENV
+
+echo
+echo "[✓] Wrote endpoints.env with arrays: ENDPOINTS_70B / ENDPOINTS_8B / ENDPOINTS_MIX"
+echo "[i] Instance IDs/log were saved to: $IDS_FILE"
+echo
+echo "Next steps:"
+echo "  1) source endpoints.env"
+echo "  2) For each endpoint, set OPENAI_API_BASE and run your shard (example below)."
+echo
+echo "Example dispatch (70B):"
+cat <<'EXAMPLE'
+# source endpoints.env
+for idx in "${!ENDPOINTS_70B[@]}"; do
+  export LTOT_BACKEND=openai
+  export OPENAI_API_BASE="${ENDPOINTS_70B[$idx]}"
+  # Fill your CLI args as usual; one process per endpoint:
+  python -m ltot.run run \
+    --model llama-3.1-70b-instruct --task gsm_plus --budget 1400 --seed $((idx%3+1)) \
+    --out "results/raw/70b.gsm_plus.1400.seed$((idx%3+1)).shard$idx.jsonl" &
+done
+wait
+EXAMPLE
+
+echo
+echo "Cleanup (destroy all labeled instances for this launch):"
+echo "  vastai list instances | grep ${DATE_TAG} | awk '{print \$1}' | xargs -n1 -I{} vastai destroy instance {}"

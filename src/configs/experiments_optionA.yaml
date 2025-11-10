@@ -1,0 +1,39 @@
+
+models: [llama-3.1-8b-instruct]
+
+budgets:
+  llama-3.1-8b-instruct: [700]   # pick one equal-compute budget (adjust as needed)
+
+tasks: [gsm_plus]
+seeds: [1]
+
+controllers:
+  ltot:
+    kappa: 1.0
+    delta: 0.02
+    eta: 4
+    b0: 1
+    micro_probe: 1
+    overflow_cap: 0.15
+    order_set: [1, 2]
+    mainline_topk: 1
+    mainline_width: 2
+    initial_lateral_width: 128
+    confirmation_temp: [0.7, 0.95]
+    micro_beam: 3
+    beta_alpha: 0.5
+
+equal_compute:
+  calibrate: true
+  tolerance_pp: 2.0
+  sample_per_task: 24
+  max_iters: 4
+
+width_scaling:
+  enabled: true
+  N0_values: [64, 128]
+
+datasets:
+  canonical_lists:
+    gsm_plus_ids: data/canonical/gsm_plus_ids.txt
+  allow_fallback_heuristics: false

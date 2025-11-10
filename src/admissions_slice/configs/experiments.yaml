@@ -1,0 +1,37 @@
+# admissions_slice/configs/experiments.yaml
+# Minimal config for the LToT admissions slice (math_500 mini)
+controllers:
+  ltot:
+    enabled: true
+    kappa: 0.6
+    delta: 0.15
+    N0: 128
+    eta: 4
+    rho_overflow: 0.10
+    micro_probe: 1
+    beta_alpha: 0.8
+    order_set: "lateral_first"
+equal_compute:
+  calibrate: true
+  sample_per_task: 24
+  tol_pp: 0.5
+bars:
+  mainline_bar: 0.55
+  lateral_bar:  0.45
+plateau:
+  enabled: true
+  patience: 2
+consistency:
+  lambdas: {"logic": 0.7, "syntax": 0.2, "constraints": 0.1}
+  admission_gate:
+    enabled: false
+
+tasks: [math_500]
+
+datasets:
+  canonical_lists:
+    math500_ids: admissions_slice/data/math500_mini_ids.txt
+  allow_fallback_heuristics: false
+
+width_scaling:
+  N0_values: [64, 128, 256]

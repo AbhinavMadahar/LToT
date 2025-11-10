@@ -110,3 +110,8 @@ datasets:
     mbpp_ids:     data/canonical/mbpp_lite_ids.txt
     game24:       data/canonical/game24_quads.txt
   allow_fallback_heuristics: false
+
+# Option-A addition: pin GSM-Plus split
+datasets:
+  canonical_lists:
+    gsm_plus_ids: data/canonical/gsm_plus_ids.txt

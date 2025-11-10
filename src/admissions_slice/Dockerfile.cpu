@@ -1,0 +1,14 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs curl tini && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1     TOKENIZERS_PARALLELISM=false     NUMEXPR_MAX_THREADS=1
+
+# CPU wheels for PyTorch
+RUN pip install --no-cache-dir --upgrade pip &&     pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.4.1 &&     pip install --no-cache-dir transformers==4.44.2 datasets==2.19.1 accelerate==0.34.2 sentencepiece==0.2.0 safetensors==0.4.3 huggingface_hub==0.24.6 pyyaml pandas numpy
+
+WORKDIR /work
+COPY . /work
+
+ENTRYPOINT ["/usr/bin/tini","--"]
+CMD ["bash","admissions_slice/run.sh"]
